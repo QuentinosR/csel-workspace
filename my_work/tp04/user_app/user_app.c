@@ -92,7 +92,7 @@ static int open_buttons(int* fd, int size){
         // config interrupt
         sprintf(str_conc, "%s%s", gpio_path, "/edge");
         f = open(str_conc, O_WRONLY);
-        write(f, "both", 5);
+        write(f, "rising", 6);
         close(f);
 
         // open gpio value attribute
@@ -187,7 +187,7 @@ int main(int argc, char* argv[])
         if (nr == -1)
             printf("event error\n");
 
-        printf ("event=%ld on fd=%d\n", event_occured.events, event_occured.data.fd);
+        //printf ("event=%ld on fd=%d\n", event_occured.events, event_occured.data.fd);
         int ibut = 0;
         for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
             if(event_occured.data.fd == fd_buttons[ibut]){
@@ -195,10 +195,11 @@ int main(int argc, char* argv[])
             }
         }
 
-        char but_val[2];
-        ssize_t n = pread(fd_buttons[ibut],but_val, 1, 0);
+        //char but_val[2];
+        //ssize_t n = pread(fd_buttons[ibut],but_val, 1, 0);
+        //printf("button %d val: %s\n", ibut + 1, but_val);
 
-        printf("button %d val: %s\n", ibut + 1, but_val);
+        printf("button %d\n", ibut + 1);
         
        
     }
