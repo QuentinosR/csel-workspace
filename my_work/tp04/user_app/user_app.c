@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <stdio.h>
+#include <sys/timerfd.h>
 
 /*
  * status led - gpioa.10 --> gpio10
@@ -49,9 +50,12 @@
 #define LED           "10"
 #define NB_BUTTONS 3
 
+//Use errno to print error.
+//Demander pourquoi ça fait ça pour le fd timer si pas de read.
+
 //Return error code
 static int open_buttons(int* fd, int size){
-    char str_conc[255];
+    char str_conc[255]; // Used to build path to files
 
     for(int i = 0; i <= size -1; i++){
         char* gpio_path;
@@ -127,81 +131,117 @@ static int open_led()
     return f;
 }
 
+static int open_timer(){
+    struct itimerspec timer_conf;
+	int fd_timer = timerfd_create(CLOCK_MONOTONIC, 0);
+	if (fd_timer == -1) {
+		printf("error in timer file creation\n");
+	}
+
+	timer_conf.it_interval.tv_sec = 0;
+	timer_conf.it_interval.tv_nsec = 500000000;
+	timer_conf.it_value.tv_sec = 0; //By default 2s
+    timer_conf.it_value.tv_nsec = 500000000;
+
+	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
+		printf("error during setting time\n");;
+	}
+
+    return fd_timer;
+}
+
+static void action_timer_time_up(int fd_led){
+    static int k = 0;
+    k = (k+1) % 2;
+    printf("Time's up, execute!\n");
+    if(k){
+        pwrite(fd_led, "1", sizeof("1"), 0);
+    }else{
+        pwrite(fd_led, "0", sizeof("0"), 0);
+    }
+}
+
+static void action_buttons(int ibut, int fd_timer){
+    printf("buttons pushed : %d\n", ibut + 1);
+
+    struct itimerspec timer_conf;
+    if (timerfd_gettime(fd_timer, &timer_conf) < 0) {
+       printf("error during getting time\n");
+    }
+
+    switch(ibut){
+        case 0:
+            timer_conf.it_interval.tv_nsec = timer_conf.it_interval.tv_nsec / 2;
+            break;
+        case 1:
+            timer_conf.it_interval.tv_nsec = 500000000;
+            break;
+        case 2:
+            timer_conf.it_interval.tv_nsec = timer_conf.it_interval.tv_nsec * 2;
+            break;
+        default:
+            break;
+    }
+
+    if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
+        printf("error during setting time\n");
+    }
+}
 int main(int argc, char* argv[])
 {
-    /*
-    long duty   = 2;     // %
-    long period = 1000;  // ms
-    if (argc >= 2) period = atoi(argv[1]);
-    period *= 1000000;  // in ns
 
-    // compute duty period...
-    long p1 = period / 100 * duty;
-    long p2 = period - p1;
-
-    int led = open_led();
-    pwrite(led, "1", sizeof("1"), 0);
-
-    struct timespec t1;
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-
-    int k = 0;
-    while (1) {
-        struct timespec t2;
-        clock_gettime(CLOCK_MONOTONIC, &t2);
-
-        long delta =
-            (t2.tv_sec - t1.tv_sec) * 1000000000 + (t2.tv_nsec - t1.tv_nsec);
-
-        int toggle = ((k == 0) && (delta >= p1)) | ((k == 1) && (delta >= p2));
-        if (toggle) {
-            t1 = t2;
-            k  = (k + 1) % 2;
-            if (k == 0)
-                pwrite(led, "1", sizeof("1"), 0);
-            else
-                pwrite(led, "0", sizeof("0"), 0);
-        }
-    }
-    */
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
+
+    int fd_timer = open_timer();
+    int fd_led = open_led();
 
     int epfd = epoll_create1(0);
     if (epfd == -1)
         printf("impossible to create poll group\n");
     
-    struct epoll_event events_conf[NB_BUTTONS];
+    struct epoll_event events_buttons_conf[NB_BUTTONS];
+    struct epoll_event event_timer_conf;
 
     for(int i = 0; i < NB_BUTTONS; i++){
-        events_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
-        events_conf[i].data.fd = fd_buttons[i]; //Identify available source
-        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_conf[i]);
+        events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
+        events_buttons_conf[i].data.fd = fd_buttons[i]; //Identify available source
+        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
         if (ret == -1)
-            printf("impossible to add fd to poll group\n");
-        }
+            printf("impossible to add fd button to poll group\n");
+    }
+
+    event_timer_conf.events = EPOLLIN;
+    event_timer_conf.data.fd = fd_timer;
+    int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_timer, &event_timer_conf);
+    if (ret == -1)
+        printf("impossible to add fd timer to poll group\n");
 
     while(1){
         struct epoll_event event_occured;
-        int nr = epoll_wait(epfd, &event_occured, NB_BUTTONS, -1);
+        int nr = epoll_wait(epfd, &event_occured, 1, -1);
         if (nr == -1)
             printf("event error\n");
 
         //printf ("event=%ld on fd=%d\n", event_occured.events, event_occured.data.fd);
-        int ibut = 0;
-        for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
-            if(event_occured.data.fd == fd_buttons[ibut]){
-                break;
+        if(event_occured.data.fd == fd_timer){
+            uint64_t value;
+            read(fd_timer, &value, 8);
+            action_timer_time_up(fd_led);
+        }else{
+            int ibut = 0;
+            for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
+                if(event_occured.data.fd == fd_buttons[ibut]){
+                    break;
+                }
             }
+            action_buttons(ibut, fd_timer);
+            //printf("button %d\n", ibut + 1);
         }
 
         //char but_val[2];
         //ssize_t n = pread(fd_buttons[ibut],but_val, 1, 0);
         //printf("button %d val: %s\n", ibut + 1, but_val);
-
-        printf("button %d\n", ibut + 1);
-        
-       
     }
     return 0;
 }
