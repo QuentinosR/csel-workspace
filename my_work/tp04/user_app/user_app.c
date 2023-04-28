@@ -139,7 +139,7 @@ static int open_timer(){
     struct itimerspec timer_conf;
 	int fd_timer = timerfd_create(CLOCK_MONOTONIC, 0);
 	if (fd_timer == -1) {
-		printf("error in timer file creation\n");
+		perror("Error in timer file creation: ");
 	}
 
     int nbSeconds = TIMER_START_INTERVAL_NS / TIMER_1S_IN_NS;
@@ -149,8 +149,11 @@ static int open_timer(){
 	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
     timer_conf.it_value.tv_nsec = nbNanoSeconds;
 
+    long newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
+    printf("[FREQ] %.2f\n", TIMER_1S_IN_NS / (double)newIntervalNS);
+
 	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
-		printf("error during setting time\n");;
+		perror("Error during setting time: ");
 	}
 
     return fd_timer;
@@ -159,7 +162,6 @@ static int open_timer(){
 static void action_timer_time_up(int fd_led){
     static int k = 0;
     k = (k+1) % 2;
-    //printf("Time's up, execute!\n");
     if(k){
         pwrite(fd_led, "1", sizeof("1"), 0);
     }else{
@@ -168,11 +170,10 @@ static void action_timer_time_up(int fd_led){
 }
 
 static void action_buttons(int ibut, int fd_timer){
-    printf("buttons pushed : %d\n", ibut + 1);
-
     struct itimerspec timer_conf;
     if (timerfd_gettime(fd_timer, &timer_conf) < 0) {
-       printf("error during getting time\n");
+       perror("Error during getting time: ");
+       return;
     }
 
     long newIntervalNS = 0;
@@ -198,7 +199,7 @@ static void action_buttons(int ibut, int fd_timer){
 
     printf("[FREQ] %.2f\n", TIMER_1S_IN_NS / (double)newIntervalNS);
     if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
-        printf("error during setting time\n");
+        perror("Error during setting time: ");
     }
 }
 int main(int argc, char* argv[])
@@ -211,8 +212,10 @@ int main(int argc, char* argv[])
     int fd_led = open_led();
 
     int epfd = epoll_create1(0);
-    if (epfd == -1)
-        printf("impossible to create poll group\n");
+    if (epfd == -1){
+        perror("Impossible to create poll group: ");
+        return 1;
+    }
     
     struct epoll_event events_buttons_conf[NB_BUTTONS];
     struct epoll_event event_timer_conf;
@@ -221,22 +224,28 @@ int main(int argc, char* argv[])
         events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
         events_buttons_conf[i].data.fd = fd_buttons[i]; //Identify available source
         int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
-        if (ret == -1)
-            printf("impossible to add fd button to poll group\n");
+        if (ret == -1){
+            perror("Impossible to add fd button to poll group: ");
+            return 1;
+        }
     }
 
     event_timer_conf.events = EPOLLIN;
     event_timer_conf.data.fd = fd_timer;
     int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_timer, &event_timer_conf);
-    if (ret == -1)
-        printf("impossible to add fd timer to poll group\n");
+    if (ret == -1){
+        perror("Impossible to add fd timer to poll group: ");
+        return 1;
+    }
 
     int avoidFirstEvents = 0;
     while(1){
         struct epoll_event event_occured;
         int nr = epoll_wait(epfd, &event_occured, 1, -1);
-        if (nr == -1)
-            printf("event error\n");
+        if (nr == -1){
+            perror("Event error: ");
+            return 1;
+        }
 
         if(event_occured.data.fd == fd_timer){
             uint64_t value;
