@@ -50,6 +50,10 @@
 #define LED           "10"
 #define NB_BUTTONS 3
 
+#define TIMER_FREQUENCY 2
+#define TIMER_1S_IN_NS 1000000000
+#define TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 2)
+
 //Use errno to print error.
 //Demander pourquoi ça fait ça pour le fd timer si pas de read.
 
@@ -138,10 +142,12 @@ static int open_timer(){
 		printf("error in timer file creation\n");
 	}
 
-	timer_conf.it_interval.tv_sec = 0;
-	timer_conf.it_interval.tv_nsec = 500000000;
-	timer_conf.it_value.tv_sec = 0; //By default 2s
-    timer_conf.it_value.tv_nsec = 500000000;
+    int nbSeconds = TIMER_START_INTERVAL_NS / TIMER_1S_IN_NS;
+    int nbNanoSeconds = TIMER_START_INTERVAL_NS % TIMER_1S_IN_NS;
+	timer_conf.it_interval.tv_sec = nbSeconds;
+	timer_conf.it_interval.tv_nsec = nbNanoSeconds;
+	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
+    timer_conf.it_value.tv_nsec = nbNanoSeconds;
 
 	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
 		printf("error during setting time\n");;
@@ -168,20 +174,28 @@ static void action_buttons(int ibut, int fd_timer){
     if (timerfd_gettime(fd_timer, &timer_conf) < 0) {
        printf("error during getting time\n");
     }
+    int newIntervalNS = 0;
 
     switch(ibut){
         case 0:
-            timer_conf.it_interval.tv_nsec = timer_conf.it_interval.tv_nsec / 2;
-            break;
-        case 1:
-            timer_conf.it_interval.tv_nsec = 500000000;
+            newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
+            newIntervalNS /= 2;
             break;
         case 2:
-            timer_conf.it_interval.tv_nsec = timer_conf.it_interval.tv_nsec * 2;
+            newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
+            newIntervalNS *= 2;
             break;
         default:
+            newIntervalNS = TIMER_START_INTERVAL_NS;
             break;
     }
+
+    int nbSeconds = newIntervalNS / TIMER_1S_IN_NS;
+    int nbNanoSeconds = newIntervalNS % TIMER_1S_IN_NS;
+
+    timer_conf.it_interval.tv_nsec = nbNanoSeconds;
+    timer_conf.it_interval.tv_sec = nbSeconds;
+
 
     if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
         printf("error during setting time\n");
