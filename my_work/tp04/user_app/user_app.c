@@ -159,7 +159,7 @@ static int open_timer(){
 static void action_timer_time_up(int fd_led){
     static int k = 0;
     k = (k+1) % 2;
-    printf("Time's up, execute!\n");
+    //printf("Time's up, execute!\n");
     if(k){
         pwrite(fd_led, "1", sizeof("1"), 0);
     }else{
@@ -174,8 +174,8 @@ static void action_buttons(int ibut, int fd_timer){
     if (timerfd_gettime(fd_timer, &timer_conf) < 0) {
        printf("error during getting time\n");
     }
-    int newIntervalNS = 0;
 
+    long newIntervalNS = 0;
     switch(ibut){
         case 0:
             newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
@@ -196,7 +196,7 @@ static void action_buttons(int ibut, int fd_timer){
     timer_conf.it_interval.tv_nsec = nbNanoSeconds;
     timer_conf.it_interval.tv_sec = nbSeconds;
 
-
+    printf("[FREQ] %.2f\n", TIMER_1S_IN_NS / (double)newIntervalNS);
     if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
         printf("error during setting time\n");
     }
@@ -231,13 +231,13 @@ int main(int argc, char* argv[])
     if (ret == -1)
         printf("impossible to add fd timer to poll group\n");
 
+    int avoidFirstEvents = 0;
     while(1){
         struct epoll_event event_occured;
         int nr = epoll_wait(epfd, &event_occured, 1, -1);
         if (nr == -1)
             printf("event error\n");
 
-        //printf ("event=%ld on fd=%d\n", event_occured.events, event_occured.data.fd);
         if(event_occured.data.fd == fd_timer){
             uint64_t value;
             read(fd_timer, &value, 8);
@@ -249,13 +249,11 @@ int main(int argc, char* argv[])
                     break;
                 }
             }
-            action_buttons(ibut, fd_timer);
-            //printf("button %d\n", ibut + 1);
+            if(avoidFirstEvents < NB_BUTTONS)
+                avoidFirstEvents++;
+            else
+                action_buttons(ibut, fd_timer);
         }
-
-        //char but_val[2];
-        //ssize_t n = pread(fd_buttons[ibut],but_val, 1, 0);
-        //printf("button %d val: %s\n", ibut + 1, but_val);
     }
     return 0;
 }
