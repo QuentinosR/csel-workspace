@@ -54,9 +54,7 @@
 #define TIMER_1S_IN_NS 1000000000
 #define TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 2)
 
-//Use errno to print error.
-//Demander pourquoi ça fait ça pour le fd timer si pas de read.
-
+//Use syslog
 //Return error code
 static int open_buttons(int* fd, int size){
     char str_conc[255]; // Used to build path to files
