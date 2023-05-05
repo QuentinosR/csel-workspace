@@ -22,6 +22,8 @@
  * Autĥor:  Daniel Gachet
  * Date:    07.11.2018
  */
+
+//Logs appear in /var/log/messages. Ex: Jan  1 00:13:23 csel local3.info csel_syslog[268]: [FREQ] 4.00
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -33,6 +35,7 @@
 #include <sys/epoll.h>
 #include <stdio.h>
 #include <sys/timerfd.h>
+#include <syslog.h>
 
 /*
  * status led - gpioa.10 --> gpio10
@@ -196,12 +199,14 @@ static void action_buttons(int ibut, int fd_timer){
     timer_conf.it_interval.tv_sec = nbSeconds;
 
     printf("[FREQ] %.2f\n", TIMER_1S_IN_NS / (double)newIntervalNS);
+    syslog(LOG_INFO, "[FREQ] %.2f\n", TIMER_1S_IN_NS / (double)newIntervalNS);
     if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
         perror("Error during setting time: ");
     }
 }
 int main(int argc, char* argv[])
 {
+    openlog("csel_syslog", LOG_PID, LOG_LOCAL3); //Void function
 
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
