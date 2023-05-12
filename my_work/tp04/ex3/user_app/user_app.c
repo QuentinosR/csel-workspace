@@ -42,8 +42,17 @@
 
 #define S_1M 1024 * 1024
 // echo $$ > /sys/fs/cgroup/cpu/cg1/cgroup.procs : Ajoute son propre PID dans le CGroup.
-//Les enfants sont également bridés même si PID différent.
-//Cela crash lors de la 20 ème allocation. Cela montre que l'allocation alloue de l'espace supplémentaire à celui demandé.
+
+// mount -t tmpfs none /sys/fs/cgroup
+// mkdir /sys/fs/cgroup/memory
+// mount -t cgroup -o memory memory /sys/fs/cgroup/memory
+// mkdir /sys/fs/cgroup/memory/mem
+// echo $$ > /sys/fs/cgroup/memory/mem/tasks
+// echo 20M > /sys/fs/cgroup/memory/mem/memory.limit_in_bytes
+
+
+// Les enfants sont également bridés même si PID différent.
+// Cela crash lors de la 20 ème allocation. Cela montre que l'allocation alloue de l'espace supplémentaire à celui demandé.
 
 int main(int argc, char* argv[])
 {
