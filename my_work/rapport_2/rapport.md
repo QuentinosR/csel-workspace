@@ -61,14 +61,16 @@ La fonction epoll_wait() attend passivement qu'une donnée soit disponible parmi
 Lorsque le processus sort de la fonction, la structure epoll_event est remplie. Le membre contenant la donnée personnelle permet d'identifier le périphérique et l'action correspondant est effectuée.
 
 
-Je ne savais pas qu'un tel mécanisme était disponible sur Linux. Dans le cadre d'un projet personnel sur Linux, je souhaitais utiliser un encodeur rotatif. L'utilisation du polling provoquait un résultat catastrophique. Le multiplexage d'entrée aurait sûrement permis de diminuer la latence.
-
 ## Affichage dans les logs
 
 La nouvelle fréquence est affichée dans les logs avec la fonction syslog. Le niveau choisi est LOG_INFO. Les logs sont situés dans "/var/log/messages". 
 La fonction openlog est appelée en spécifiant l'identifiant qui apparait au début de chaque message, soit "csel_syslog".
 
-# Exercice 2
+Je ne savais pas qu'un tel mécanisme était disponible sur Linux. Dans le cadre d'un projet personnel sur Linux, je souhaitais utiliser un encodeur rotatif. L'utilisation du polling provoquait un résultat catastrophique. Le multiplexage d'entrée aurait sûrement permis de diminuer la latence. J'ai apprécié que le mécanisme de multiplexage soit appliqué sur des périphériques embarqués. J'ai eu des difficultés à utiliser "struct itimerspec" pour la configuration d'un timer. Je ne comprennais pas la différence entre "it_interval" et "it_value".
+
+
+
+# Multiprocessing et Ordonnanceur : Processus, signaux et communication
 L'objectif de ce travail pratique est de communiquer entre un processus parent et enfant grâce à un mécanisme de Linux. Le mécanisme pour cet exercice est socketpair.
 
 L'enfant communique au parent des chaines de caractères qui sont affichées par ce dernier. Pour les deux, les signaux sont interceptés. Egalement, chaque processus doit fonctionner sur un coeur différent.
@@ -87,7 +89,9 @@ Afin que le processus soit associée à un coeur précis, la fonction sched_seta
 
 Lors de l'exécution du programme, le signal 17 est capturé. Il correspond à SIGCHLD et est émis lorsque le processus enfant meurt.
 
-# Exercice 3
+Je connaissais déjà les sockets ainsi que la création de processus.Je n'ai pas rencontré de difficultés particulières.
+
+# Multiprocessing et Ordonnanceur : CGroups 1
 L'objectif de ce travail pratique est d'expérimenter les cgroups en limitant la mémoire d'un programme.
 
 La première étape consiste à monter les cgroups en spécifiant les sous-systèmes à exporter. Dans le cadre de l'exercice, uniquement la ressource "memory" est à restreindre. Les commandes sont les suivantes:
@@ -116,7 +120,9 @@ Il est possible de modifier le comportement lorsque le quota est atteint au trav
 
 3. Il est possible de surveiller la quantité de RAM consommées par les tâches d'un groupe. Elle est affichée dans le fichier "/sys/fs/cgroup/memory/mem/memory.usage_in_bytes".
 
-# Exercice 4
+Grâce à ce laboratoire j'ai appris à répartir la mémoire RAM d'une machine en sous-groupes. Cela peut-être très utile lors de la réalisation d'une infrastructure système. Je n'ai pas rencontré de difficulté particulière.
+
+# Multiprocessing et Ordonnanceur : CGroups 2
 L'objectif de ce travail pratique est de restreindre l'utilisation des coeurs du processeur.
 
 Le programme réalisé crée une tâche enfant avec l'appel à fork(). Le processus parent et enfant effectuent une boucle infinie afin d'occuper toutes les ressources du coeur. L'appui de CTRL+C termine les deux processus.
@@ -168,3 +174,4 @@ Un shell est connecté via SSH et le programme est exécuté. Sur un second shel
 echo  323 > /sys/fs/cgroup/cpuset/75/tasks
 echo  324 > /sys/fs/cgroup/cpuset/25/tasks
 
+Grâce à ce laboratoire j'ai appris à restreindre l'utilisation CPU d'une machine en sous-groupes. Cela peut-être très utile lors de la réalisation d'une infrastructure système. Je n'ai pas rencontré de difficulté particulière.
