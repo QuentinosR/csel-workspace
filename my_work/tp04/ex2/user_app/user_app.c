@@ -89,6 +89,7 @@ void parent_action(){
 }
 
 void sig_catch(int signum){
+    printf("signal catched %d\n", signum);
     return;
 }
 int main(int argc, char* argv[])
