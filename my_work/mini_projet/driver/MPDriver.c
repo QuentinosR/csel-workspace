@@ -3,16 +3,49 @@
 #include <linux/kernel.h>  // needed for debugging
 #include <linux/device.h>          /* needed for sysfs handling */
 #include <linux/platform_device.h> /* needed for sysfs handling */
+
+#include <linux/thermal.h>
+#include <linux/gpio.h>
+#include <linux/timer.h>
+
 #define ATTR_MAX_VAL_CHARS 2
+#define INTERVAL_AUTO_COOL_TIMER_S 5
 
 static struct class* sysfs_class;
 static struct device* sysfs_device;
-char coolingMode = 0;
-char blinkingFreq = 0;
-
+static char coolingMode = 0;
+static char blinkingFreq = 5;
+static struct thermal_zone_device *thermZone;
+static struct timer_list timer_auto_cooling;
+static struct timer_list timer_led;
 typedef enum {
     NOT_EXIST,MODE, BLINKING
 } attribute_t;
+
+
+//Called
+void auto_cooling_callback(struct timer_list *t){
+    int temp;
+    int retval;
+
+    printk("cooling callback\n");
+
+    retval = thermal_zone_get_temp(thermZone, &temp);
+
+    if (retval < 0){
+        printk("Failed to get temperature from thermal zone, %d\n", retval);
+    }else{
+        printk("Temperature: %d°C\n", temp / 1000); //mC
+    }
+
+    //Check temperature
+    //Modify blink timer if nec.
+    mod_timer(&timer_auto_cooling, jiffies + msecs_to_jiffies(INTERVAL_AUTO_COOL_TIMER_S *1000));
+}
+
+void led_timer_callback(struct timer_list *t){
+    printk("led callback\n");
+}
 
 attribute_t get_attr(struct device_attribute* attr){
     if(strncmp(attr->attr.name, "mode", 4 ) == 0){
@@ -33,6 +66,9 @@ int attr_write_mode(char mode){
     printk("new mode : %d\n", mode);
     coolingMode =  mode; 
 
+    //Timer setup to control temp.
+    //del_timer(struct timer_list * timer);
+
     return 0;
 }
 
@@ -45,6 +81,7 @@ int attr_write_blinking(char freq){
 
     printk("new blink : %d\n", freq);
     blinkingFreq = freq;
+    //int mod_timer(struct timer_list *timer, unsigned long expires);
     return 0;
 }
 ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char* buf)
@@ -99,6 +136,19 @@ static int __init mod_init(void)
     sysfs_device = device_create(sysfs_class, NULL, 0, NULL, "controller");
     status = device_create_file(sysfs_device, &dev_attr_mode);
     status |= device_create_file(sysfs_device, &dev_attr_blinking);
+
+    //Thermal zone
+    thermZone = thermal_zone_get_zone_by_name("cpu-thermal");
+    if (!thermZone) {
+        printk("Impossible to set thermal zone\n");
+        return 1;
+    }
+
+    //Timer setup
+    timer_setup(&timer_auto_cooling, auto_cooling_callback, 0);
+    timer_setup(&timer_led, led_timer_callback, 0);
+    mod_timer(&timer_auto_cooling, jiffies + msecs_to_jiffies(INTERVAL_AUTO_COOL_TIMER_S *1000));
+    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / blinkingFreq));
     return status;
 }
 static void __exit mod_exit(void)
@@ -107,6 +157,9 @@ static void __exit mod_exit(void)
     device_remove_file(sysfs_device, &dev_attr_blinking);
     device_destroy(sysfs_class, 0);
     class_destroy(sysfs_class);
+
+    del_timer(&timer_auto_cooling);
+    del_timer(&timer_led);
 }
 
 module_init (mod_init);
