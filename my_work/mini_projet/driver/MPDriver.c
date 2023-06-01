@@ -52,7 +52,7 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
     ssize_t lenBuf;
     char valWrite;
 
-    lenBuf = strnlen(buf, ATTR_MAX_VAL_CHARS);
+   /* lenBuf = strnlen(buf, ATTR_MAX_VAL_CHARS);
     if(lenBuf < ATTR_MAX_VAL_CHARS){ //Not enough memory
         return -1;
     }
@@ -69,16 +69,18 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
     }
     
     return snprintf(buf, sizeof(buf), "%d", valWrite); //Return number of chars written
+    */
+   return 0;
 }
 ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
 {
     char safeBuf[ATTR_MAX_VAL_CHARS + 1] = {0};
-    ssize_t retval;
+    int nbCharsBuf;
     char intSafeBuf;
-    
-    
-    retval = strnlen(buf, ATTR_MAX_VAL_CHARS);
-    strncpy(safeBuf, buf, ATTR_MAX_VAL_CHARS);
+
+    nbCharsBuf = count <= ATTR_MAX_VAL_CHARS ? count : ATTR_MAX_VAL_CHARS;
+    //printk("strlen: %ld, count :%ld\n", retval, count);
+    memcpy(safeBuf, buf, nbCharsBuf);
     
     intSafeBuf = simple_strtol(safeBuf, NULL, 10); //Convert on safe buffer
     switch(get_attr(attr)){
@@ -91,8 +93,8 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
         default:
             break;
     }
-    
-    return retval + 1; //Otherwise echo redo one write
+    //printk("retval : %ld\n", retval);
+    return count; //We handled all text
 }
 
 DEVICE_ATTR(mode, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
