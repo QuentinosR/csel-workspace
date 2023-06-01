@@ -10,6 +10,7 @@
 
 #define ATTR_MAX_VAL_CHARS 2
 #define INTERVAL_AUTO_COOL_TIMER_S 5
+#define GPIO_LED_STATUS 10
 
 static struct class* sysfs_class;
 static struct device* sysfs_device;
@@ -44,7 +45,12 @@ void auto_cooling_callback(struct timer_list *t){
 }
 
 void led_timer_callback(struct timer_list *t){
+    static int ledVal = 0;
     printk("led callback\n");
+
+    ledVal = !ledVal;
+    gpio_set_value(GPIO_LED_STATUS, ledVal);
+    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / (blinkingFreq * 2)));
 }
 
 attribute_t get_attr(struct device_attribute* attr){
@@ -132,6 +138,7 @@ DEVICE_ATTR(blinking, 0664, sysfs_show_attr, sysfs_store_attr); // Create : stru
 static int __init mod_init(void)
 {
     int status = 0;
+    int retVal = 0;
     sysfs_class = class_create(THIS_MODULE, "mpcooling");
     sysfs_device = device_create(sysfs_class, NULL, 0, NULL, "controller");
     status = device_create_file(sysfs_device, &dev_attr_mode);
@@ -144,11 +151,25 @@ static int __init mod_init(void)
         return 1;
     }
 
+    //Leds setuo
+    // Led status => Cooling
+    retVal = gpio_request(GPIO_LED_STATUS, "gpio_led_status");
+    if (retVal < 0) {
+        printk(KERN_ERR "Failed to request GPIO pin\n");
+        return retVal;
+    }
+    retVal = gpio_direction_output(GPIO_LED_STATUS, 1);
+    if (retVal < 0) {
+        printk(KERN_ERR "Failed to set GPIO direction\n");
+        gpio_free(GPIO_LED_STATUS);  // Free the GPIO pin
+        return retVal;
+    }
+
     //Timer setup
     timer_setup(&timer_auto_cooling, auto_cooling_callback, 0);
     timer_setup(&timer_led, led_timer_callback, 0);
     mod_timer(&timer_auto_cooling, jiffies + msecs_to_jiffies(INTERVAL_AUTO_COOL_TIMER_S *1000));
-    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / blinkingFreq));
+    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / (blinkingFreq * 2))); //Divided by two because one period
     return status;
 }
 static void __exit mod_exit(void)
@@ -157,6 +178,9 @@ static void __exit mod_exit(void)
     device_remove_file(sysfs_device, &dev_attr_blinking);
     device_destroy(sysfs_class, 0);
     class_destroy(sysfs_class);
+
+    //Free leds
+    gpio_free(GPIO_LED_STATUS);
 
     del_timer(&timer_auto_cooling);
     del_timer(&timer_led);
