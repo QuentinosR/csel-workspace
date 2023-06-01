@@ -49,14 +49,8 @@ int attr_write_blinking(char freq){
 }
 ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char* buf)
 {
-    ssize_t lenBuf;
+    //Impossible to know if destination buffer is wide enough.
     char valWrite;
-
-   /* lenBuf = strnlen(buf, ATTR_MAX_VAL_CHARS);
-    if(lenBuf < ATTR_MAX_VAL_CHARS){ //Not enough memory
-        return -1;
-    }
-
     switch(get_attr(attr)){
         case MODE :
             valWrite = coolingMode;
@@ -68,9 +62,7 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
            return -1;
     }
     
-    return snprintf(buf, sizeof(buf), "%d", valWrite); //Return number of chars written
-    */
-   return 0;
+    return snprintf(buf, ATTR_MAX_VAL_CHARS, "%d", valWrite); //Return number of chars written
 }
 ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
 {
