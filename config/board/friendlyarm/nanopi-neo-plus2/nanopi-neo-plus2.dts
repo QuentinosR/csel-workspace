@@ -2,6 +2,10 @@
 
 #include "allwinner/sun50i-h5-nanopi-neo-plus2.dts"
 
-/ {
-        /delete-node/ leds;
+/{
+    /delete-node/ leds;
+};
+
+&i2c0 {
+    status = "okay";
 };
