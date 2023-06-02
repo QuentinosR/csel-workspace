@@ -9,13 +9,14 @@
 #include <linux/timer.h>
 
 #define ATTR_MAX_VAL_CHARS 2
-#define INTERVAL_AUTO_COOL_TIMER_S 5
+#define FREQ_AUTO_COOL 1
+#define FREQ_DEFAULT_LED 2
 #define GPIO_LED_STATUS 10
 
 static struct class* sysfs_class;
 static struct device* sysfs_device;
-static char coolingMode = 0;
-static char blinkingFreq = 5;
+static char autoCoolingMode = 0;
+static char blinkingFreq = FREQ_DEFAULT_LED;
 static struct thermal_zone_device *thermZone;
 static struct timer_list timer_auto_cooling;
 static struct timer_list timer_led;
@@ -23,34 +24,44 @@ typedef enum {
     NOT_EXIST,MODE, BLINKING
 } attribute_t;
 
-
+int timer_set_freq(struct timer_list* t, int freq){
+    return mod_timer(t, jiffies + msecs_to_jiffies(1000 / freq));
+}
 //Called
 void auto_cooling_callback(struct timer_list *t){
     int temp;
     int retval;
 
     printk("cooling callback\n");
+    timer_set_freq(t, FREQ_AUTO_COOL); //Necessary to set timer at each time end
 
     retval = thermal_zone_get_temp(thermZone, &temp);
+    temp /= 1000; //mC => °C
 
     if (retval < 0){
         printk("Failed to get temperature from thermal zone, %d\n", retval);
+        return;
     }else{
-        printk("Temperature: %d°C\n", temp / 1000); //mC
+        printk("Temperature: %d°C\n", temp); 
     }
 
-    //Check temperature
-    //Modify blink timer if nec.
-    mod_timer(&timer_auto_cooling, jiffies + msecs_to_jiffies(INTERVAL_AUTO_COOL_TIMER_S *1000));
+    if(temp < 35){
+        blinkingFreq = 2;
+    }else if(temp < 40){
+        blinkingFreq = 5;
+    }else if(temp < 45){
+        blinkingFreq = 10;
+    }else{
+        blinkingFreq = 20;
+    }
 }
 
 void led_timer_callback(struct timer_list *t){
     static int ledVal = 0;
-    printk("led callback\n");
-
     ledVal = !ledVal;
+    
     gpio_set_value(GPIO_LED_STATUS, ledVal);
-    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / (blinkingFreq * 2)));
+    timer_set_freq(t, blinkingFreq * 2);
 }
 
 attribute_t get_attr(struct device_attribute* attr){
@@ -70,7 +81,7 @@ int attr_write_mode(char mode){
         return -1;
     }
     printk("new mode : %d\n", mode);
-    coolingMode =  mode; 
+    autoCoolingMode =  mode; 
 
     //Timer setup to control temp.
     //del_timer(struct timer_list * timer);
@@ -96,7 +107,7 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
     char valWrite;
     switch(get_attr(attr)){
         case MODE :
-            valWrite = coolingMode;
+            valWrite = autoCoolingMode;
             break;
         case BLINKING :
             valWrite = blinkingFreq;
@@ -137,40 +148,63 @@ DEVICE_ATTR(blinking, 0664, sysfs_show_attr, sysfs_store_attr); // Create : stru
 
 static int __init mod_init(void)
 {
-    int status = 0;
     int retVal = 0;
     sysfs_class = class_create(THIS_MODULE, "mpcooling");
+    if (IS_ERR(sysfs_class)){
+        printk(KERN_ERR"Impossible to create the device class\n");
+        return 1;
+    }
     sysfs_device = device_create(sysfs_class, NULL, 0, NULL, "controller");
-    status = device_create_file(sysfs_device, &dev_attr_mode);
-    status |= device_create_file(sysfs_device, &dev_attr_blinking);
+    if (IS_ERR(sysfs_device)){
+        printk(KERN_ERR"Impossible to create the device\n");
+        return 1;
+    }
+    retVal = device_create_file(sysfs_device, &dev_attr_mode);
+    if(retVal < 0){
+        printk(KERN_ERR "Failed to create attribute file mode\n");
+        return 1;
+    }
+    retVal= device_create_file(sysfs_device, &dev_attr_blinking);
+    if(retVal < 0){
+        printk(KERN_ERR "Failed to create attribute file blinking\n");
+        return 1;
+    }
 
     //Thermal zone
     thermZone = thermal_zone_get_zone_by_name("cpu-thermal");
     if (!thermZone) {
-        printk("Impossible to set thermal zone\n");
+        printk(KERN_ERR "Impossible to set thermal zone\n");
         return 1;
     }
 
-    //Leds setuo
-    // Led status => Cooling
+    //Leds setup
     retVal = gpio_request(GPIO_LED_STATUS, "gpio_led_status");
     if (retVal < 0) {
         printk(KERN_ERR "Failed to request GPIO pin\n");
-        return retVal;
+        return 1;
     }
     retVal = gpio_direction_output(GPIO_LED_STATUS, 1);
     if (retVal < 0) {
         printk(KERN_ERR "Failed to set GPIO direction\n");
         gpio_free(GPIO_LED_STATUS);  // Free the GPIO pin
-        return retVal;
+        return 1;
     }
 
     //Timer setup
     timer_setup(&timer_auto_cooling, auto_cooling_callback, 0);
     timer_setup(&timer_led, led_timer_callback, 0);
-    mod_timer(&timer_auto_cooling, jiffies + msecs_to_jiffies(INTERVAL_AUTO_COOL_TIMER_S *1000));
-    mod_timer(&timer_led, jiffies + msecs_to_jiffies(1000 / (blinkingFreq * 2))); //Divided by two because one period
-    return status;
+    retVal = timer_set_freq(&timer_auto_cooling, FREQ_AUTO_COOL);
+    if(retVal < 0){
+        printk(KERN_ERR "Failed to setup timer for auto colling\n");
+        return 1;
+    }
+    retVal = timer_set_freq(&timer_led, blinkingFreq); //Divided by two because one period
+    if(retVal < 0){
+        printk(KERN_ERR "Failed to setup timer for led blinking\n");
+        return 1;
+    }
+
+    return 0;
 }
 static void __exit mod_exit(void)
 {
