@@ -77,7 +77,6 @@ attribute_t get_attr(struct device_attribute* attr){
     return NOT_EXIST;
 }
 
-
 //Return 0 on success
 int attr_write_mode(char mode){
     int status = 1;
@@ -102,6 +101,10 @@ int attr_write_mode(char mode){
 int attr_write_blinking(char freq){
     if(coolingMode == AUTOMATIC){
         printk("[MPDriver] Forbidden to manually modify frequency in automatic mode\n");
+        return -1;
+    }
+    if(freq == 0){
+        printk("[MPDriver] Impossible to set frequency 0Hz\n");
         return -1;
     }
     printk("[MPDriver] new blinking frequency : %d\n", freq);
