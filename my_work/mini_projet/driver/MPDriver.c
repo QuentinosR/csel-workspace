@@ -31,8 +31,7 @@ int timer_set_freq(struct timer_list* t, int freq){
 void auto_cooling_callback(struct timer_list *t){
     int temp;
     int retval;
-
-    printk("cooling callback\n");
+    
     timer_set_freq(t, FREQ_AUTO_COOL); //Necessary to set timer at each time end
 
     retval = thermal_zone_get_temp(thermZone, &temp);
