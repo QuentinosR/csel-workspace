@@ -13,16 +13,21 @@
 #define FREQ_DEFAULT_LED 2
 #define GPIO_LED_STATUS 10
 
+typedef enum {
+    NOT_EXIST, MODE, BLINKING
+} attribute_t;
+
+typedef enum {
+    MANUAL, AUTOMATIC
+} cooling_mode_t;
+
 static struct class* sysfs_class;
 static struct device* sysfs_device;
-static char autoCoolingMode = 0;
+static char coolingMode = AUTOMATIC;
 static char blinkingFreq = FREQ_DEFAULT_LED;
 static struct thermal_zone_device *thermZone;
 static struct timer_list timer_auto_cooling;
 static struct timer_list timer_led;
-typedef enum {
-    NOT_EXIST,MODE, BLINKING
-} attribute_t;
 
 int timer_set_freq(struct timer_list* t, int freq){
     return mod_timer(t, jiffies + msecs_to_jiffies(1000 / freq));
@@ -31,17 +36,17 @@ int timer_set_freq(struct timer_list* t, int freq){
 void auto_cooling_callback(struct timer_list *t){
     int temp;
     int retval;
-    
+
     timer_set_freq(t, FREQ_AUTO_COOL); //Necessary to set timer at each time end
 
     retval = thermal_zone_get_temp(thermZone, &temp);
     temp /= 1000; //mC => °C
 
     if (retval < 0){
-        printk("Failed to get temperature from thermal zone, %d\n", retval);
+        printk("[MPDriver] Failed to get temperature from thermal zone, %d\n", retval);
         return;
     }else{
-        printk("Temperature: %d°C\n", temp); 
+        //printk("[MPDriver] Temperature: %d°C\n", temp); 
     }
 
     if(temp < 35){
@@ -75,29 +80,32 @@ attribute_t get_attr(struct device_attribute* attr){
 
 //Return 0 on success
 int attr_write_mode(char mode){
-    if(mode != 0 && mode != 1){
-        printk("value mode %d not authorized\n", mode);
+    int status = 1;
+    if(mode != MANUAL && mode != AUTOMATIC){
+        printk("[MPDriver] value mode %d not authorized\n", mode);
         return -1;
     }
-    printk("new mode : %d\n", mode);
-    autoCoolingMode =  mode; 
+    printk("[MPDriver] new mode : %d\n", mode);
 
-    //Timer setup to control temp.
-    //del_timer(struct timer_list * timer);
+    if(coolingMode == MANUAL && mode == AUTOMATIC){ // MANUAL => AUTOMATIC
+        status = timer_set_freq(&timer_auto_cooling, FREQ_AUTO_COOL);
+    }else if(coolingMode == AUTOMATIC && mode == MANUAL){ // AUTOMATIC => MANUAL
+        //Next period is in max possible time
+        status = mod_timer(&timer_auto_cooling, LONG_MAX);
+    }
 
-    return 0;
+    coolingMode =  mode; 
+    return status > 0 ? 0 : -1;
 }
 
 //Return 0 on success
 int attr_write_blinking(char freq){
-    if( freq != 5 && freq != 10 && freq != 15 && freq != 20){
-        printk("value blink %d not authorized\n", freq);
+    if(coolingMode == AUTOMATIC){
+        printk("[MPDriver] Forbidden to manually modify frequency in automatic mode\n");
         return -1;
     }
-
-    printk("new blink : %d\n", freq);
+    printk("[MPDriver] new blinking frequency : %d\n", freq);
     blinkingFreq = freq;
-    //int mod_timer(struct timer_list *timer, unsigned long expires);
     return 0;
 }
 ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char* buf)
@@ -106,7 +114,7 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
     char valWrite;
     switch(get_attr(attr)){
         case MODE :
-            valWrite = autoCoolingMode;
+            valWrite = coolingMode;
             break;
         case BLINKING :
             valWrite = blinkingFreq;
@@ -138,7 +146,6 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
         default:
             break;
     }
-    //printk("retval : %ld\n", retval);
     return count; //We handled all text
 }
 
@@ -151,50 +158,51 @@ static int __init mod_init(void)
     sysfs_class = class_create(THIS_MODULE, "mpcooling");
     if (IS_ERR(sysfs_class)){
         printk(KERN_ERR"Impossible to create the device class\n");
-        return 1;
+        return -1;
     }
     sysfs_device = device_create(sysfs_class, NULL, 0, NULL, "controller");
     if (IS_ERR(sysfs_device)){
         printk(KERN_ERR"Impossible to create the device\n");
-        return 1;
+        return -1;
     }
     retVal = device_create_file(sysfs_device, &dev_attr_mode);
     if(retVal < 0){
         printk(KERN_ERR "Failed to create attribute file mode\n");
-        return 1;
+        return -1;
     }
     retVal= device_create_file(sysfs_device, &dev_attr_blinking);
     if(retVal < 0){
         printk(KERN_ERR "Failed to create attribute file blinking\n");
-        return 1;
+        return -1;
     }
 
     //Thermal zone
     thermZone = thermal_zone_get_zone_by_name("cpu-thermal");
     if (!thermZone) {
         printk(KERN_ERR "Impossible to set thermal zone\n");
-        return 1;
+        return -1;
     }
 
     //Leds setup
     retVal = gpio_request(GPIO_LED_STATUS, "gpio_led_status");
     if (retVal < 0) {
         printk(KERN_ERR "Failed to request GPIO pin\n");
-        return 1;
+        return -1;
     }
     retVal = gpio_direction_output(GPIO_LED_STATUS, 1);
     if (retVal < 0) {
         printk(KERN_ERR "Failed to set GPIO direction\n");
         gpio_free(GPIO_LED_STATUS);  // Free the GPIO pin
-        return 1;
+        return -1;
     }
 
     //Timer setup
     timer_setup(&timer_auto_cooling, auto_cooling_callback, 0);
     timer_setup(&timer_led, led_timer_callback, 0);
+
     retVal = timer_set_freq(&timer_auto_cooling, FREQ_AUTO_COOL);
     if(retVal < 0){
-        printk(KERN_ERR "Failed to setup timer for auto colling\n");
+        printk(KERN_ERR "Failed to setup timer for auto coolling\n");
         return 1;
     }
     retVal = timer_set_freq(&timer_led, blinkingFreq); //Divided by two because one period

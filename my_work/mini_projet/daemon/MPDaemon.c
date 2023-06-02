@@ -43,15 +43,17 @@
 #define GPIO_K1      "/sys/class/gpio/gpio0"
 #define GPIO_K2      "/sys/class/gpio/gpio2"
 #define GPIO_K3      "/sys/class/gpio/gpio3"
+#define COOLING_CONTROLLER "/sys/class/mpcooling/controller"
 #define K1            "0"
 #define K2            "2"
 #define K3            "3"
 #define LED           "362"
 #define NB_BUTTONS 3
+#define NB_COOLING_CONTROLLER_ATTR 2
 
-#define TIMER_FREQUENCY 2
-#define TIMER_1S_IN_NS 1000000000
-#define TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 2)
+//Common header ?
+static char coolingMode = 1;
+static char blinkingFreq = 5;
 
 //Return error code
 static int open_buttons(int* fd, int size){
@@ -127,21 +129,34 @@ static int open_led()
 
     // open gpio value attribute
     f = open(GPIO_LED "/value", O_RDWR);
+    write(f, "0", 1); //Turn off led
     
     return f;
 }
 
-static void action_buttons(int ibut, int fd_led){
+static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
+    char str[2 + 1];
+    int fd = 0;
+    int nb = 0;
 
     switch(ibut){
         case 0:
             printf("S1\n");
+            blinkingFreq += 1;
+            fd = fd_blinking;
+            nb = blinkingFreq;
             break;
         case 1:
             printf("S2\n");
+            blinkingFreq -= 1;
+            fd = fd_blinking;
+            nb = blinkingFreq;
             break;
         case 2:
             printf("S3\n");
+            coolingMode  = !coolingMode;
+            fd = fd_mode;
+            nb = coolingMode;
             break;
         default:
             break;
@@ -149,10 +164,39 @@ static void action_buttons(int ibut, int fd_led){
     pwrite(fd_led, "1", sizeof("1"), 0);
     usleep(2000);
     pwrite(fd_led, "0", sizeof("1"), 0);
+
+    sprintf(str, "%d", nb);
+    pwrite(fd, str, strlen(str), 0);
+}
+
+//[fd_mode, fd_blinking]
+static int open_cooling_controller(int* fd){
+    if(!fd)
+        return -1;
+    int fd_mode = open(COOLING_CONTROLLER "/mode", O_RDWR);
+    if(fd_mode < 0)
+        return -1;
+
+    int fd_blinking = open(COOLING_CONTROLLER "/blinking", O_RDWR);
+    if(fd_blinking < 0)
+        return -1;
+    
+    fd[0] = fd_mode;
+    fd[1] = fd_blinking;
+
+    return 0;
 }
 int main(int argc, char* argv[])
 {
     //openlog("csel_syslog", LOG_PID, LOG_LOCAL3); //Void function
+    int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
+    int ret = open_cooling_controller(fd_cooling);
+    if(ret < 0){
+        printf("Error during opening controller fd\n");
+        return 1;
+    }
+    int fd_mode = fd_cooling[0];
+    int fd_blinking = fd_cooling[1];
 
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
@@ -195,7 +239,7 @@ int main(int argc, char* argv[])
         if(avoidFirstEvents < NB_BUTTONS)
             avoidFirstEvents++;
         else
-            action_buttons(ibut, fd_led);
+            action_buttons(ibut, fd_led, fd_mode, fd_blinking);
     }
     return 0;
 }
