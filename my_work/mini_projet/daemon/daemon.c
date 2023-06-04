@@ -72,6 +72,7 @@ void daemon_create(){
     }
     
 
+
     // 7. close all open file descriptors
     for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
         close(fd);

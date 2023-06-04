@@ -57,6 +57,7 @@
 #define UNUSED(x) (void)(x)
 
 //Common header ?
+#define FIFO_PATH "/tmp/MPFifo"
 static char coolingMode = 1;
 static char blinkingFreq = 5;
 
@@ -139,6 +140,19 @@ static int open_led()
     return f;
 }
 
+static int open_pipe(){
+    int fd;
+    
+    // Create the named pipe
+    mkfifo(FIFO_PATH, 0666);
+
+    fd = open(FIFO_PATH, O_RDONLY | O_NONBLOCK);
+    if (fd == -1) {
+        perror("open");
+        exit(1);
+    }
+    return 0;
+}
 static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     char str[2 + 1];
     int fd = 0;
@@ -195,6 +209,7 @@ static int open_cooling_controller(int* fd){
 }
 int main(int argc, char* argv[])
 {
+    int ret;
     UNUSED(argc);
     UNUSED(argv);
 /*
@@ -223,7 +238,7 @@ int main(int argc, char* argv[])
     syslog(LOG_INFO, "After create !");
 
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
-    int ret = open_cooling_controller(fd_cooling);
+    ret = open_cooling_controller(fd_cooling);
     if(ret < 0){
         printf("Error during opening controller fd\n");
         return 1;
@@ -236,6 +251,8 @@ int main(int argc, char* argv[])
 
     int fd_led = open_led();
 
+    int fd_pipe = open_pipe();
+
     int epfd = epoll_create1(0);
     if (epfd == -1){
         perror("Impossible to create poll group: ");
@@ -243,16 +260,30 @@ int main(int argc, char* argv[])
     }
     
     struct epoll_event events_buttons_conf[NB_BUTTONS];
+    struct epoll_event event_pipe_conf;
 
     for(int i = 0; i < NB_BUTTONS; i++){
         events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
         events_buttons_conf[i].data.fd = fd_buttons[i]; //Identify available source
-        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
+        ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
         if (ret == -1){
             perror("Impossible to add fd button to poll group: ");
             return 1;
         }
     }
+
+/*
+    syslog(LOG_INFO, "Before poll add!");
+    event_pipe_conf.events = EPOLLIN;
+    event_pipe_conf.data.fd = fd_pipe;
+    ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_pipe, &event_pipe_conf);
+    if (ret == -1){
+        syslog(LOG_INFO, "Error poll add ! %d", ret);
+        perror("Impossible to add fd pipe to poll group: ");
+        return 1;
+    }
+    syslog(LOG_INFO, "After poll add !");
+*/
 
     int avoidFirstEvents = 0;
     while(1){
@@ -263,6 +294,14 @@ int main(int argc, char* argv[])
             return 1;
         }
 
+/*
+        if(event_occured.data.fd == fd_pipe){
+            char buf[256] = {0};
+            read(fd_pipe, buf, 256);
+            printf("Reader: Message received: %s\n", buf);
+            continue;
+        }
+*/
         int ibut = 0;
         for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
             if(event_occured.data.fd == fd_buttons[ibut]){
@@ -273,6 +312,7 @@ int main(int argc, char* argv[])
             avoidFirstEvents++;
         else
             action_buttons(ibut, fd_led, fd_mode, fd_blinking);
+
     }
     return 0;
 }
