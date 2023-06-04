@@ -91,34 +91,6 @@ void daemon_create(){
         exit(1);
     }
 
-/*
-    // 9. option: open syslog for message logging
-    openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
-    syslog(LOG_INFO, "Daemon has started...");
-
-    // 10. option: get effective user and group id for appropriate's one
-    struct passwd* pwd = getpwnam("daemon");
-    if (pwd == 0) {
-        syslog(LOG_ERR, "ERROR while reading daemon password file entry");
-        exit(1);
-    }
-
-    // 11. option: change root directory
-    if (chroot(".") == -1) {
-        syslog(LOG_ERR, "ERROR while changing to new root directory");
-        exit(1);
-    }
-
-    // 12. option: change effective user and group id for appropriate's one
-    if (setegid(pwd->pw_gid) == -1) {
-        syslog(LOG_ERR, "ERROR while setting new effective group id");
-        exit(1);
-    }
-    if (seteuid(pwd->pw_uid) == -1) {
-        syslog(LOG_ERR, "ERROR while setting new effective user id");
-        exit(1);
-    }
-    syslog(LOG_INFO, "Daemon end func");
     closelog();
-*/
+
 }

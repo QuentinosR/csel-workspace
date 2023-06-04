@@ -108,7 +108,7 @@ int attr_write_blinking(char freq){
         printk(KERN_INFO"[MPDriver] Impossible to set frequency 0Hz\n");
         return -1;
     }
-    printk(KERN_INFO"[MPDriver] new blinking frequency : %d\n", freq);
+    printk(KERN_INFO"[MPDriver] new blinking frequency : %dHz\n", freq);
     blinkingFreq = freq;
     return 0;
 }
