@@ -37,6 +37,7 @@
 #include <sys/timerfd.h>
 #include <syslog.h>
 #include "ssd1306.h"
+#include <limits.h>
 
 #define GPIO_EXPORT   "/sys/class/gpio/export"
 #define GPIO_UNEXPORT "/sys/class/gpio/unexport"
@@ -143,13 +144,15 @@ static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     switch(ibut){
         case 0:
             printf("S1\n");
-            blinkingFreq += 1;
+            if(blinkingFreq != CHAR_MAX)
+                blinkingFreq += 1;
             fd = fd_blinking;
             nb = blinkingFreq;
             break;
         case 1:
             printf("S2\n");
-            blinkingFreq -= 1;
+            if(blinkingFreq !=0)
+                blinkingFreq -= 1;
             fd = fd_blinking;
             nb = blinkingFreq;
             break;
@@ -189,6 +192,7 @@ static int open_cooling_controller(int* fd){
 }
 int main(int argc, char* argv[])
 {
+/*
     ssd1306_init();
 
     ssd1306_set_position (0,0);
@@ -205,6 +209,7 @@ int main(int argc, char* argv[])
     ssd1306_set_position (0,5);
     ssd1306_puts("Duty: 50%");
     return 0;
+*/
 
     //openlog("csel_syslog", LOG_PID, LOG_LOCAL3); //Void function
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 

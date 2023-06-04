@@ -12,6 +12,7 @@
 #define FREQ_AUTO_COOL 1
 #define FREQ_DEFAULT_LED 2
 #define GPIO_LED_STATUS 10
+#define CHAR_MAX 255
 
 typedef enum {
     NOT_EXIST, MODE, BLINKING
@@ -103,7 +104,7 @@ int attr_write_blinking(char freq){
         printk("[MPDriver] Forbidden to manually modify frequency in automatic mode\n");
         return -1;
     }
-    if(freq == 0){
+    if(freq == 0 || freq == CHAR_MAX){
         printk("[MPDriver] Impossible to set frequency 0Hz\n");
         return -1;
     }
