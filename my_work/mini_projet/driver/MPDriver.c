@@ -82,10 +82,10 @@ attribute_t get_attr(struct device_attribute* attr){
 int attr_write_mode(char mode){
     int status = 1;
     if(mode != MANUAL && mode != AUTOMATIC){
-        printk("[MPDriver] value mode %d not authorized\n", mode);
+        printk(KERN_INFO"[MPDriver] value mode %d not authorized\n", mode);
         return -1;
     }
-    printk("[MPDriver] new mode : %d\n", mode);
+    printk(KERN_INFO"[MPDriver] new mode : %d\n", mode);
 
     if(coolingMode == MANUAL && mode == AUTOMATIC){ // MANUAL => AUTOMATIC
         status = timer_set_freq(&timer_auto_cooling, FREQ_AUTO_COOL);
@@ -101,14 +101,14 @@ int attr_write_mode(char mode){
 //Return 0 on success
 int attr_write_blinking(char freq){
     if(coolingMode == AUTOMATIC){
-        printk("[MPDriver] Forbidden to manually modify frequency in automatic mode\n");
+        printk(KERN_INFO"[MPDriver] Forbidden to manually modify frequency in automatic mode\n");
         return -1;
     }
     if(freq == 0 || freq == CHAR_MAX){
-        printk("[MPDriver] Impossible to set frequency 0Hz\n");
+        printk(KERN_INFO"[MPDriver] Impossible to set frequency 0Hz\n");
         return -1;
     }
-    printk("[MPDriver] new blinking frequency : %d\n", freq);
+    printk(KERN_INFO"[MPDriver] new blinking frequency : %d\n", freq);
     blinkingFreq = freq;
     return 0;
 }

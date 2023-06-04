@@ -38,6 +38,7 @@
 #include <syslog.h>
 #include "ssd1306.h"
 #include <limits.h>
+#include "daemon.h"
 
 #define GPIO_EXPORT   "/sys/class/gpio/export"
 #define GPIO_UNEXPORT "/sys/class/gpio/unexport"
@@ -52,6 +53,8 @@
 #define LED           "362"
 #define NB_BUTTONS 3
 #define NB_COOLING_CONTROLLER_ATTR 2
+
+#define UNUSED(x) (void)(x)
 
 //Common header ?
 static char coolingMode = 1;
@@ -192,6 +195,8 @@ static int open_cooling_controller(int* fd){
 }
 int main(int argc, char* argv[])
 {
+    UNUSED(argc);
+    UNUSED(argv);
 /*
     ssd1306_init();
 
@@ -211,7 +216,12 @@ int main(int argc, char* argv[])
     return 0;
 */
 
-    //openlog("csel_syslog", LOG_PID, LOG_LOCAL3); //Void function
+    openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
+    syslog(LOG_INFO, "Before deamon");
+
+    daemon_create();
+    syslog(LOG_INFO, "After create !");
+
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
     int ret = open_cooling_controller(fd_cooling);
     if(ret < 0){
