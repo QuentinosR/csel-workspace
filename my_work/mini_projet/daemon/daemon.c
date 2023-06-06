@@ -51,6 +51,8 @@ void daemon_create(){
     // 3. fork again to get rid of session leading process
     fork_process();
 
+
+
     // 4. capture all required signals
     struct sigaction act = {
         .sa_handler = catch_signal,
@@ -62,6 +64,7 @@ void daemon_create(){
     sigaction(SIGTERM, &act, NULL);  // 15 - termination
     sigaction(SIGTSTP, &act, NULL);  // 19 - terminal stop signal
 
+
     // 5. update file mode creation mask
     umask(0027);
 
@@ -72,12 +75,14 @@ void daemon_create(){
     }
     
 
-
+/*
     // 7. close all open file descriptors
     for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
         close(fd);
     }
+*/
 
+/*
     // 8. redirect stdin, stdout and stderr to /dev/null
     if (open("/dev/null", O_RDWR) != STDIN_FILENO) {
         syslog(LOG_ERR, "ERROR while opening '/dev/null' for stdin");
@@ -92,6 +97,7 @@ void daemon_create(){
         exit(1);
     }
 
+*/
     closelog();
 
 }

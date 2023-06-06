@@ -158,7 +158,7 @@ static int open_timer(){
 	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
     timer_conf.it_value.tv_nsec = nbNanoSeconds;
 
-    long newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
+    //long newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
     
 	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
 		perror("Error during setting time: ");
@@ -297,7 +297,7 @@ int main(int argc, char* argv[])
     openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
     syslog(LOG_INFO, "Before deamon");
 
-    //daemon_create();
+    daemon_create();
     syslog(LOG_INFO, "After create !");
 
 
@@ -309,7 +309,6 @@ int main(int argc, char* argv[])
     }
     int fd_mode = fd_cooling[0];
     int fd_blinking = fd_cooling[1];
-    int fd_temperature = fd_cooling[2];
 
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
@@ -329,8 +328,6 @@ int main(int argc, char* argv[])
     struct epoll_event events_buttons_conf[NB_BUTTONS];
     struct epoll_event event_pipe_conf;
     struct epoll_event event_disp_timer_conf;
-
-    
 
     for(int i = 0; i < NB_BUTTONS; i++){
         events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
