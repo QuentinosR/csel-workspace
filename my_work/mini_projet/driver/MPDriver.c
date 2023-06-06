@@ -134,8 +134,7 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
            return -1;
     }
 
-    int nbWritten = snprintf(buf, ATTR_MAX_VAL_CHARS, "%d", valWrite); //Return number of chars written
-    buf[nbWritten] = '\0';
+    int nbWritten = snprintf(buf, ATTR_MAX_VAL_CHARS + 1 , "%d", valWrite); //Size has to include null terminated
     return  nbWritten;
 }
 ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)

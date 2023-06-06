@@ -55,7 +55,7 @@
 #define NB_COOLING_CONTROLLER_ATTR 3
 #define ATTR_MAX_VAL_CHARS 2
 #define TIMER_1S_IN_NS 1000000000
-#define DISPLAY_TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 2)
+#define DISPLAY_TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 4)
 
 #define UNUSED(x) (void)(x)
 
@@ -172,21 +172,26 @@ static void action_disp_timer_time_up(int* fd){
     int fd_mode = fd[0];
     int fd_blinking = fd[1];
     int fd_temperature = fd[2];
-    ssize_t nb_bytes;
-    char buff[3] = {0};
+    char buff_mode[ATTR_MAX_VAL_CHARS + 1] = {0};
+    char buff_blinking[ATTR_MAX_VAL_CHARS + 1] = {0};
+    char buff_temperature[ATTR_MAX_VAL_CHARS + 1] = {0};
+
+    pread(fd_temperature, buff_temperature, 2, 0);
+    pread(fd_blinking, buff_blinking, 2, 0);
+    pread(fd_mode, buff_mode, 2, 0);
 
     ssd1306_set_position(6,3);
-    nb_bytes = pread(fd_temperature, buff, 3, 0);
-    printf("hello %s %d\n", buff, nb_bytes);
-    ssd1306_puts(buff);
+    ssd1306_puts(buff_mode);
 
     ssd1306_set_position(6,4);
-    nb_bytes = pread(fd_blinking, buff, 3, 0);
-    ssd1306_puts(buff);
+    ssd1306_puts("  ");
+    ssd1306_set_position(6,4);
+    ssd1306_puts(buff_temperature);
 
     ssd1306_set_position(6,5);
-    nb_bytes = pread(fd_mode, buff, 3, 0);
-    ssd1306_puts(buff);
+    ssd1306_puts("  ");
+    ssd1306_set_position(6,5);
+    ssd1306_puts(buff_blinking);
     
 }
 
@@ -264,19 +269,20 @@ static int open_cooling_controller(int* fd){
 }
 void display_init(){
     ssd1306_init();
+    ssd1306_clear_display();
     ssd1306_set_position (0,0);
-    ssd1306_puts("CSEL1a - MPCooler");
+    ssd1306_puts("CSEL1 - MPCooler");
     ssd1306_set_position (0,1);
     ssd1306_puts("  Rod Quentin");
     ssd1306_set_position (0,2);
     ssd1306_puts("-----------------");
 
     ssd1306_set_position (0,3);
-    ssd1306_puts("Temp:   'C");
-    ssd1306_set_position (0,4);
-    ssd1306_puts("Freq:   Hz");
-    ssd1306_set_position (0,5);
     ssd1306_puts("Mode:   ");
+    ssd1306_set_position (0,4);
+    ssd1306_puts("Temp:   'C");
+    ssd1306_set_position (0,5);
+    ssd1306_puts("Freq:   Hz");
 
 
 }
