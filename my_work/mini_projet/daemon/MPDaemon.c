@@ -359,7 +359,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     syslog(LOG_INFO, "After poll add !");
-*/
+    */
 
     int avoidFirstEvents = 0;
     while(1){
@@ -373,8 +373,11 @@ int main(int argc, char* argv[])
 /*
         if(event_occured.data.fd == fd_pipe){
             char buf[256] = {0};
-            read(fd_pipe, buf, 256);
-            printf("Reader: Message received: %s\n", buf);
+            int ret = read(fd_pipe, buf, 256);
+            if(ret != -1 && ret != 0){
+                printf("Reader: Message received: %s\n", buf);
+                exit(0);
+            }
             continue;
         }
 */

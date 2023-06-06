@@ -52,7 +52,6 @@ void daemon_create(){
     fork_process();
 
 
-
     // 4. capture all required signals
     struct sigaction act = {
         .sa_handler = catch_signal,
@@ -75,29 +74,24 @@ void daemon_create(){
     }
     
 
-/*
+
     // 7. close all open file descriptors
+    /*
     for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
         close(fd);
     }
-*/
+    */
 
-/*
+
     // 8. redirect stdin, stdout and stderr to /dev/null
-    if (open("/dev/null", O_RDWR) != STDIN_FILENO) {
-        syslog(LOG_ERR, "ERROR while opening '/dev/null' for stdin");
-        exit(1);
-    }
-    if (dup2(STDIN_FILENO, STDOUT_FILENO) != STDOUT_FILENO) {
-        syslog(LOG_ERR, "ERROR while opening '/dev/null' for stdout");
-        exit(1);
-    }
-    if (dup2(STDIN_FILENO, STDERR_FILENO) != STDERR_FILENO) {
-        syslog(LOG_ERR, "ERROR while opening '/dev/null' for stderr");
-        exit(1);
-    }
+    int devNull = open("/dev/null", O_RDWR);
+    dup2(devNull, STDIN_FILENO);   // Redirect stdin to /dev/null
+    dup2(devNull, STDOUT_FILENO);  // Redirect stdout to /dev/null
+    dup2(devNull, STDERR_FILENO);  // Redirect stderr to /dev/null
+    // Close the original file descriptor
+    close(devNull);
 
-*/
+
     closelog();
 
 }
