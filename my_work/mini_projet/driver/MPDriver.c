@@ -15,7 +15,7 @@
 #define CHAR_MAX 255
 
 typedef enum {
-    NOT_EXIST, MODE, BLINKING
+    NOT_EXIST, MODE, BLINKING, TEMPERATURE
 } attribute_t;
 
 typedef enum {
@@ -26,6 +26,7 @@ static struct class* sysfs_class;
 static struct device* sysfs_device;
 static char coolingMode = AUTOMATIC;
 static char blinkingFreq = FREQ_DEFAULT_LED;
+static char tempC = 0;
 static struct thermal_zone_device *thermZone;
 static struct timer_list timer_auto_cooling;
 static struct timer_list timer_led;
@@ -49,6 +50,7 @@ void auto_cooling_callback(struct timer_list *t){
     }else{
         //printk("[MPDriver] Temperature: %d°C\n", temp); 
     }
+    tempC = temp;
 
     if(temp < 35){
         blinkingFreq = 2;
@@ -74,6 +76,8 @@ attribute_t get_attr(struct device_attribute* attr){
         return MODE;
     }else if(strncmp(attr->attr.name, "blinking", 8) == 0){
         return BLINKING;
+    }else if(strncmp(attr->attr.name, "temperature", 4) == 0){
+        return TEMPERATURE;
     }
     return NOT_EXIST;
 }
@@ -123,11 +127,16 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
         case BLINKING :
             valWrite = blinkingFreq;
             break;
+        case TEMPERATURE :
+            valWrite = tempC;
+            break;
         default:
            return -1;
     }
-    
-    return snprintf(buf, ATTR_MAX_VAL_CHARS, "%d", valWrite); //Return number of chars written
+
+    int nbWritten = snprintf(buf, ATTR_MAX_VAL_CHARS, "%d", valWrite); //Return number of chars written
+    buf[nbWritten] = '\0';
+    return  nbWritten;
 }
 ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
 {
@@ -155,6 +164,7 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
 
 DEVICE_ATTR(mode, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
 DEVICE_ATTR(blinking, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
+DEVICE_ATTR(temperature, 0444, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
 
 static int __init mod_init(void)
 {
@@ -177,6 +187,11 @@ static int __init mod_init(void)
     retVal= device_create_file(sysfs_device, &dev_attr_blinking);
     if(retVal < 0){
         printk(KERN_ERR "Failed to create attribute file blinking\n");
+        return -1;
+    }
+    retVal= device_create_file(sysfs_device, &dev_attr_temperature);
+    if(retVal < 0){
+        printk(KERN_ERR "Failed to create attribute file temperature\n");
         return -1;
     }
 
@@ -221,6 +236,7 @@ static void __exit mod_exit(void)
 {
     device_remove_file(sysfs_device, &dev_attr_mode);
     device_remove_file(sysfs_device, &dev_attr_blinking);
+    device_remove_file(sysfs_device, &dev_attr_temperature);
     device_destroy(sysfs_class, 0);
     class_destroy(sysfs_class);
 

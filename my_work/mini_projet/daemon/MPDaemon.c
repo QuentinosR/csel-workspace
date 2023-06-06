@@ -52,12 +52,16 @@
 #define K3            "3"
 #define LED           "362"
 #define NB_BUTTONS 3
-#define NB_COOLING_CONTROLLER_ATTR 2
+#define NB_COOLING_CONTROLLER_ATTR 3
+#define ATTR_MAX_VAL_CHARS 2
+#define TIMER_1S_IN_NS 1000000000
+#define DISPLAY_TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 2)
 
 #define UNUSED(x) (void)(x)
 
-//Common header ?
+//Define in MPDaemon.h
 #define FIFO_PATH "/tmp/MPFifo"
+//Get initial values or define in MPDriver.h
 static char coolingMode = 1;
 static char blinkingFreq = 5;
 
@@ -140,6 +144,52 @@ static int open_led()
     return f;
 }
 
+static int open_timer(){
+    struct itimerspec timer_conf;
+	int fd_timer = timerfd_create(CLOCK_MONOTONIC, 0);
+	if (fd_timer == -1) {
+		perror("Error in timer file creation: ");
+	}
+
+    int nbSeconds = DISPLAY_TIMER_START_INTERVAL_NS / TIMER_1S_IN_NS;
+    int nbNanoSeconds = DISPLAY_TIMER_START_INTERVAL_NS % TIMER_1S_IN_NS;
+	timer_conf.it_interval.tv_sec = nbSeconds;
+	timer_conf.it_interval.tv_nsec = nbNanoSeconds;
+	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
+    timer_conf.it_value.tv_nsec = nbNanoSeconds;
+
+    long newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
+    
+	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
+		perror("Error during setting time: ");
+	}
+
+    return fd_timer;
+}
+
+static void action_disp_timer_time_up(int* fd){
+
+    int fd_mode = fd[0];
+    int fd_blinking = fd[1];
+    int fd_temperature = fd[2];
+    ssize_t nb_bytes;
+    char buff[3] = {0};
+
+    ssd1306_set_position(6,3);
+    nb_bytes = pread(fd_temperature, buff, 3, 0);
+    printf("hello %s %d\n", buff, nb_bytes);
+    ssd1306_puts(buff);
+
+    ssd1306_set_position(6,4);
+    nb_bytes = pread(fd_blinking, buff, 3, 0);
+    ssd1306_puts(buff);
+
+    ssd1306_set_position(6,5);
+    nb_bytes = pread(fd_mode, buff, 3, 0);
+    ssd1306_puts(buff);
+    
+}
+
 static int open_pipe(){
     int fd;
     
@@ -190,7 +240,7 @@ static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     pwrite(fd, str, strlen(str), 0);
 }
 
-//[fd_mode, fd_blinking]
+//[fd_mode, fd_blinking, fd_temperature]
 static int open_cooling_controller(int* fd){
     if(!fd)
         return -1;
@@ -201,41 +251,49 @@ static int open_cooling_controller(int* fd){
     int fd_blinking = open(COOLING_CONTROLLER "/blinking", O_RDWR);
     if(fd_blinking < 0)
         return -1;
+
+    int fd_temperature = open(COOLING_CONTROLLER "/temperature", O_RDONLY);
+    if(fd_temperature < 0)
+        return -1;
     
     fd[0] = fd_mode;
     fd[1] = fd_blinking;
+    fd[2] = fd_temperature;
 
     return 0;
 }
+void display_init(){
+    ssd1306_init();
+    ssd1306_set_position (0,0);
+    ssd1306_puts("CSEL1a - MPCooler");
+    ssd1306_set_position (0,1);
+    ssd1306_puts("  Rod Quentin");
+    ssd1306_set_position (0,2);
+    ssd1306_puts("-----------------");
+
+    ssd1306_set_position (0,3);
+    ssd1306_puts("Temp:   'C");
+    ssd1306_set_position (0,4);
+    ssd1306_puts("Freq:   Hz");
+    ssd1306_set_position (0,5);
+    ssd1306_puts("Mode:   ");
+
+
+}
+
 int main(int argc, char* argv[])
 {
     int ret;
     UNUSED(argc);
     UNUSED(argv);
-/*
-    ssd1306_init();
 
-    ssd1306_set_position (0,0);
-    ssd1306_puts("CSEL1a - SP.07");
-    ssd1306_set_position (0,1);
-    ssd1306_puts("  Demo - SW");
-    ssd1306_set_position (0,2);
-    ssd1306_puts("--------------");
-
-    ssd1306_set_position (0,3);
-    ssd1306_puts("Temp: 35'C");
-    ssd1306_set_position (0,4);
-    ssd1306_puts("Freq: 1Hz");
-    ssd1306_set_position (0,5);
-    ssd1306_puts("Duty: 50%");
-    return 0;
-*/
-
+    display_init();
     openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
     syslog(LOG_INFO, "Before deamon");
 
-    daemon_create();
+    //daemon_create();
     syslog(LOG_INFO, "After create !");
+
 
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
     ret = open_cooling_controller(fd_cooling);
@@ -245,9 +303,12 @@ int main(int argc, char* argv[])
     }
     int fd_mode = fd_cooling[0];
     int fd_blinking = fd_cooling[1];
+    int fd_temperature = fd_cooling[2];
 
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
+
+     int fd_disp_timer = open_timer();
 
     int fd_led = open_led();
 
@@ -261,6 +322,9 @@ int main(int argc, char* argv[])
     
     struct epoll_event events_buttons_conf[NB_BUTTONS];
     struct epoll_event event_pipe_conf;
+    struct epoll_event event_disp_timer_conf;
+
+    
 
     for(int i = 0; i < NB_BUTTONS; i++){
         events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
@@ -271,6 +335,15 @@ int main(int argc, char* argv[])
             return 1;
         }
     }
+
+    event_disp_timer_conf.events = EPOLLIN;
+    event_disp_timer_conf.data.fd = fd_disp_timer;
+    ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_disp_timer, &event_disp_timer_conf);
+    if (ret == -1){
+        perror("Impossible to add fd timer to poll group: ");
+        return 1;
+    }
+
 
 /*
     syslog(LOG_INFO, "Before poll add!");
@@ -302,6 +375,13 @@ int main(int argc, char* argv[])
             continue;
         }
 */
+        if(event_occured.data.fd == fd_disp_timer){
+            uint64_t value;
+            read(fd_disp_timer, &value, 8);
+            action_disp_timer_time_up(fd_cooling);
+            continue;
+        }
+
         int ibut = 0;
         for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
             if(event_occured.data.fd == fd_buttons[ibut]){
