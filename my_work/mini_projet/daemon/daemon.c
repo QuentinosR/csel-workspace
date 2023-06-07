@@ -38,9 +38,9 @@ static void fork_process()
 }
 
 void daemon_create(){
+
      // 1. fork off the parent process
     fork_process();
-
 
     // 2. create new session
     if (setsid() == -1) {
@@ -63,7 +63,6 @@ void daemon_create(){
     sigaction(SIGTERM, &act, NULL);  // 15 - termination
     sigaction(SIGTSTP, &act, NULL);  // 19 - terminal stop signal
 
-
     // 5. update file mode creation mask
     umask(0027);
 
@@ -73,24 +72,18 @@ void daemon_create(){
         exit(1);
     }
     
+    // 7. close all open file descriptors except standard input (0), output (1), and error (2)
 
-
-    // 7. close all open file descriptors
-    /*
-    for (int fd = sysconf(_SC_OPEN_MAX); fd >= 0; fd--) {
+    syslog(LOG_KERN, "max fd : %ld\n", sysconf(_SC_OPEN_MAX));
+    for (int fd = 3; fd < sysconf(_SC_OPEN_MAX); fd++) {
         close(fd);
     }
-    */
-
 
     // 8. redirect stdin, stdout and stderr to /dev/null
     int devNull = open("/dev/null", O_RDWR);
     dup2(devNull, STDIN_FILENO);   // Redirect stdin to /dev/null
     dup2(devNull, STDOUT_FILENO);  // Redirect stdout to /dev/null
     dup2(devNull, STDERR_FILENO);  // Redirect stderr to /dev/null
-    // Close the original file descriptor
-    close(devNull);
-
 
     closelog();
 

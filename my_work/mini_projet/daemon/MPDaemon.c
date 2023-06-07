@@ -180,6 +180,7 @@ static void action_disp_timer_time_up(int* fd){
     pread(fd_blinking, buff_blinking, 2, 0);
     pread(fd_mode, buff_mode, 2, 0);
 
+     syslog(LOG_INFO, "Timer action %s %s %s\n", buff_mode, buff_blinking, buff_temperature);
     ssd1306_set_position(6,3);
     ssd1306_puts(buff_mode);
 
@@ -192,6 +193,7 @@ static void action_disp_timer_time_up(int* fd){
     ssd1306_puts("  ");
     ssd1306_set_position(6,5);
     ssd1306_puts(buff_blinking);
+    syslog(LOG_INFO, "coucou");
     
 }
 
@@ -204,9 +206,10 @@ static int open_pipe(){
     fd = open(FIFO_PATH, O_RDONLY | O_NONBLOCK);
     if (fd == -1) {
         perror("open");
+        syslog(LOG_ERR, "Error in opening pipe");
         exit(1);
     }
-    return 0;
+    return fd;
 }
 static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     char str[2 + 1];
@@ -293,12 +296,11 @@ int main(int argc, char* argv[])
     UNUSED(argc);
     UNUSED(argv);
 
-    display_init();
-    openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
-    syslog(LOG_INFO, "Before deamon");
-
     daemon_create();
-    syslog(LOG_INFO, "After create !");
+
+    openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
+    syslog(LOG_INFO, "After create daemon !");
+    display_init();
 
 
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
@@ -313,11 +315,11 @@ int main(int argc, char* argv[])
     int fd_buttons[NB_BUTTONS]; 
     open_buttons(fd_buttons, NB_BUTTONS);
 
-     int fd_disp_timer = open_timer();
+    int fd_disp_timer = open_timer();
 
     int fd_led = open_led();
 
-    int fd_pipe = open_pipe();
+    //int fd_pipe = open_pipe();
 
     int epfd = epoll_create1(0);
     if (epfd == -1){
@@ -344,9 +346,9 @@ int main(int argc, char* argv[])
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_disp_timer, &event_disp_timer_conf);
     if (ret == -1){
         perror("Impossible to add fd timer to poll group: ");
+        syslog(LOG_INFO, "Impossible to add fd timer to poll group");
         return 1;
     }
-
 
 /*
     syslog(LOG_INFO, "Before poll add!");
@@ -354,12 +356,15 @@ int main(int argc, char* argv[])
     event_pipe_conf.data.fd = fd_pipe;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_pipe, &event_pipe_conf);
     if (ret == -1){
-        syslog(LOG_INFO, "Error poll add ! %d", ret);
+        syslog(LOG_INFO, "Error poll add ! %d, fd: %d", ret, fd_pipe);
+        syslog(LOG_INFO, "Exit");
         perror("Impossible to add fd pipe to poll group: ");
+
+        syslog(LOG_INFO, strerror(errno));
         return 1;
     }
     syslog(LOG_INFO, "After poll add !");
-    */
+*/
 
     int avoidFirstEvents = 0;
     while(1){
@@ -370,24 +375,24 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-/*
-        if(event_occured.data.fd == fd_pipe){
-            char buf[256] = {0};
-            int ret = read(fd_pipe, buf, 256);
-            if(ret != -1 && ret != 0){
-                printf("Reader: Message received: %s\n", buf);
-                exit(0);
-            }
-            continue;
-        }
-*/
         if(event_occured.data.fd == fd_disp_timer){
             uint64_t value;
             read(fd_disp_timer, &value, 8);
             action_disp_timer_time_up(fd_cooling);
             continue;
         }
-
+/*
+        if(event_occured.data.fd == fd_pipe){
+            char buf[256] = {0};
+            int ret = read(fd_pipe, buf, 256);
+            if(ret != -1 && ret != 0){
+                //printf("Reader: Message received: %s\n", buf);
+                syslog(LOG_INFO, "Reader: Message received: %s\n", buf);
+                exit(0);
+            }
+            continue;
+        }
+*/
         int ibut = 0;
         for(ibut = 0; ibut < NB_BUTTONS - 1; ibut++){
             if(event_occured.data.fd == fd_buttons[ibut]){
