@@ -64,6 +64,8 @@
 //Get initial values or define in MPDriver.h
 static char coolingMode = 1;
 static char blinkingFreq = 5;
+//define attr strings
+//concurrency problem with buttons and IPC but don't protect
 
 //Return error code
 static int open_buttons(int* fd, int size){
@@ -209,41 +211,71 @@ static int open_pipe(){
     }
     return fd;
 }
+
+static void action_pipe_message(char* command){
+    char cmd[100];
+    char val[100];
+    char* equalsSign = strchr(command, '=');
+    if (equalsSign == NULL){
+        syslog(LOG_ERR, "Char \"=\" not detected\n");
+        return;
+    }
+    
+    strncpy(cmd, command, equalsSign - command);
+    cmd[equalsSign - command] = '\0';
+    strcpy(val, equalsSign + 1);
+    syslog(LOG_INFO, "Reader: Message received: cmd :%s, val:%s\n", cmd, val);
+/*
+    char valNum = strol(val, NULL, 10);
+    if(strncmp(cmd, "mode", 4 ) == 0){
+        //coolingMode  =
+    }else if(strncmp(cmd, "blinking", 8) == 0){
+   
+    }else if(strncmp(cmd, "temperature", 4) == 0){
+        
+    }
+*/
+}
 static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     char str[2 + 1];
     int fd = 0;
-    int nb = 0;
+    char nb = 0;
+    char* pChange = NULL;
 
     switch(ibut){
         case 0:
-            printf("S1\n");
-            if(blinkingFreq != CHAR_MAX)
-                blinkingFreq += 1;
+            printf("[MPDaemon] S1 pushed\n");
             fd = fd_blinking;
-            nb = blinkingFreq;
+            nb = blinkingFreq + 1;
+            pChange = &blinkingFreq;
             break;
         case 1:
             printf("S2\n");
-            if(blinkingFreq !=0)
-                blinkingFreq -= 1;
             fd = fd_blinking;
-            nb = blinkingFreq;
+            nb = blinkingFreq - 1;
+            pChange = &blinkingFreq;
             break;
         case 2:
             printf("S3\n");
-            coolingMode  = !coolingMode;
             fd = fd_mode;
-            nb = coolingMode;
+            nb = !coolingMode;
+            pChange = &coolingMode;
             break;
         default:
             break;
     }
+
+    /* Red led blinking */
     pwrite(fd_led, "1", sizeof("1"), 0);
     usleep(2000);
     pwrite(fd_led, "0", sizeof("1"), 0);
 
     sprintf(str, "%d", nb);
-    pwrite(fd, str, strlen(str), 0);
+
+    /* If no error, modify the value */
+    if(pwrite(fd, str, strlen(str), 0) > 0){
+        *pChange = nb;
+    }
 }
 
 //[fd_mode, fd_blinking, fd_temperature]
@@ -265,7 +297,6 @@ static int open_cooling_controller(int* fd){
     fd[0] = fd_mode;
     fd[1] = fd_blinking;
     fd[2] = fd_temperature;
-
     return 0;
 }
 void display_init(){
@@ -284,8 +315,6 @@ void display_init(){
     ssd1306_puts("Temp:   'C");
     ssd1306_set_position (0,5);
     ssd1306_puts("Freq:   Hz");
-
-
 }
 
 int main(int argc, char* argv[])
@@ -378,8 +407,7 @@ int main(int argc, char* argv[])
             char buf[256] = {0};
             int ret = read(fd_pipe, buf, 256);
             if(ret != -1 && ret != 0){
-                //printf("Reader: Message received: %s\n", buf);
-                syslog(LOG_INFO, "Reader: Message received: %s\n", buf);
+                action_pipe_message(buf);
             }
             continue;
         }
