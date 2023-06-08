@@ -8,7 +8,8 @@
 #include <linux/gpio.h>
 #include <linux/timer.h>
 
-#define ATTR_MAX_VAL_CHARS 2
+#include "MPDriver.h"
+
 #define FREQ_AUTO_COOL 1
 #define FREQ_DEFAULT_LED 2
 #define GPIO_LED_STATUS 10
@@ -72,13 +73,12 @@ void led_timer_callback(struct timer_list *t){
 }
 
 attribute_t get_attr(struct device_attribute* attr){
-    if(strncmp(attr->attr.name, "mode", 4 ) == 0){
+    if(strncmp(attr->attr.name, ATTR_NAME_MODE, strlen(ATTR_NAME_MODE) ) == 0)
         return MODE;
-    }else if(strncmp(attr->attr.name, "blinking", 8) == 0){
+    else if(strncmp(attr->attr.name, ATTR_NAME_BLINKING, strlen(ATTR_NAME_BLINKING)) == 0)
         return BLINKING;
-    }else if(strncmp(attr->attr.name, "temperature", 4) == 0){
+    else if(strncmp(attr->attr.name, ATTR_NAME_TEMPERATURE, strlen(ATTR_NAME_TEMPERATURE)) == 0)
         return TEMPERATURE;
-    }
     return NOT_EXIST;
 }
 
@@ -163,13 +163,15 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
     return count; //We handled all text
 }
 
-DEVICE_ATTR(mode, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
-DEVICE_ATTR(blinking, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
-DEVICE_ATTR(temperature, 0444, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
+struct device_attribute dev_attr_mode = __ATTR(ATTR_NAME_MODE, 0664, sysfs_show_attr, sysfs_store_attr);
+struct device_attribute dev_attr_blinking = __ATTR(ATTR_NAME_BLINKING, 0664, sysfs_show_attr, sysfs_store_attr);
+struct device_attribute dev_attr_temperature = __ATTR(ATTR_NAME_TEMPERATURE, 0664, sysfs_show_attr, sysfs_store_attr);
+
 
 static int __init mod_init(void)
 {
     int retVal = 0;
+
     sysfs_class = class_create(THIS_MODULE, "mpcooling");
     if (IS_ERR(sysfs_class)){
         printk(KERN_ERR"[MPDriver] Impossible to create the device class\n");

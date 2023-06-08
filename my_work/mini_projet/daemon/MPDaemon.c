@@ -39,6 +39,7 @@
 #include "ssd1306.h"
 #include <limits.h>
 #include "daemon.h"
+#include "../driver/MPDriver.h"
 
 #define GPIO_EXPORT   "/sys/class/gpio/export"
 #define GPIO_UNEXPORT "/sys/class/gpio/unexport"
@@ -47,13 +48,16 @@
 #define GPIO_K2      "/sys/class/gpio/gpio2"
 #define GPIO_K3      "/sys/class/gpio/gpio3"
 #define COOLING_CONTROLLER "/sys/class/mpcooling/controller"
+#define COOLING_CONTROLLER_MODE COOLING_CONTROLLER ATTR_NAME_MODE
+#define COOLING_CONTROLLER_BLINKING COOLING_CONTROLLER ATTR_NAME_BLINKING
+#define COOLING_CONTROLLER_TEMPERATURE COOLING_CONTROLLER ATTR_NAME_TEMPERATURE
+
 #define K1            "0"
 #define K2            "2"
 #define K3            "3"
 #define LED           "362"
 #define NB_BUTTONS 3
 #define NB_COOLING_CONTROLLER_ATTR 3
-#define ATTR_MAX_VAL_CHARS 2
 #define TIMER_1S_IN_NS 1000000000
 #define DISPLAY_TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 4)
 
@@ -66,6 +70,7 @@ static char coolingMode = 1;
 static char blinkingFreq = 5;
 //define attr strings
 //concurrency problem with buttons and IPC but don't protect
+//Voir les permissions des fichiers.
 
 //Return error code
 static int open_buttons(int* fd, int size){
@@ -159,8 +164,6 @@ static int open_timer(){
 	timer_conf.it_interval.tv_nsec = nbNanoSeconds;
 	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
     timer_conf.it_value.tv_nsec = nbNanoSeconds;
-
-    //long newIntervalNS = timer_conf.it_interval.tv_nsec + TIMER_1S_IN_NS * timer_conf.it_interval.tv_sec;
     
 	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
 		perror("Error during setting time: ");
@@ -282,15 +285,15 @@ static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
 static int open_cooling_controller(int* fd){
     if(!fd)
         return -1;
-    int fd_mode = open(COOLING_CONTROLLER "/mode", O_RDWR);
+    int fd_mode = open(COOLING_CONTROLLER_MODE, O_RDWR);
     if(fd_mode < 0)
         return -1;
 
-    int fd_blinking = open(COOLING_CONTROLLER "/blinking", O_RDWR);
+    int fd_blinking = open(COOLING_CONTROLLER_BLINKING, O_RDWR);
     if(fd_blinking < 0)
         return -1;
 
-    int fd_temperature = open(COOLING_CONTROLLER "/temperature", O_RDONLY);
+    int fd_temperature = open(COOLING_CONTROLLER_TEMPERATURE, O_RDONLY);
     if(fd_temperature < 0)
         return -1;
     
