@@ -40,6 +40,7 @@
 #include <limits.h>
 #include "daemon.h"
 #include "../driver/MPDriver.h"
+#include "MPDaemon.h"
 
 #define GPIO_EXPORT   "/sys/class/gpio/export"
 #define GPIO_UNEXPORT "/sys/class/gpio/unexport"
@@ -63,12 +64,9 @@
 
 #define UNUSED(x) (void)(x)
 
-//Define in MPDaemon.h
-#define FIFO_PATH "/tmp/MPFifo"
 //Get initial values or define in MPDriver.h
 static char coolingMode = 1;
 static char blinkingFreq = 5;
-//define attr strings
 //concurrency problem with buttons and IPC but don't protect
 //Voir les permissions des fichiers.
 
@@ -154,9 +152,8 @@ static int open_led()
 static int open_timer(){
     struct itimerspec timer_conf;
 	int fd_timer = timerfd_create(CLOCK_MONOTONIC, 0);
-	if (fd_timer == -1) {
-		perror("Error in timer file creation: ");
-	}
+	if (fd_timer == -1)
+        return -1;
 
     int nbSeconds = DISPLAY_TIMER_START_INTERVAL_NS / TIMER_1S_IN_NS;
     int nbNanoSeconds = DISPLAY_TIMER_START_INTERVAL_NS % TIMER_1S_IN_NS;
@@ -166,7 +163,7 @@ static int open_timer(){
     timer_conf.it_value.tv_nsec = nbNanoSeconds;
     
 	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
-		perror("Error during setting time: ");
+		syslog(LOG_ERR, "[MPDaemon] Impossible to set interval of timer");
 	}
 
     return fd_timer;
@@ -205,13 +202,9 @@ static int open_pipe(){
     
     // Create the named pipe
     mkfifo(FIFO_PATH, 0666);
-
     fd = open(FIFO_PATH, O_RDONLY | O_NONBLOCK);
-    if (fd == -1) {
-        perror("open");
-        syslog(LOG_ERR, "Error in opening pipe");
-        exit(1);
-    }
+    if (fd == -1)
+        return -1;
     return fd;
 }
 
@@ -220,7 +213,7 @@ static void action_pipe_message(char* command){
     char val[100];
     char* equalsSign = strchr(command, '=');
     if (equalsSign == NULL){
-        syslog(LOG_ERR, "Char \"=\" not detected\n");
+        syslog(LOG_ERR, "Char \"=\" not detected");
         return;
     }
     
@@ -329,31 +322,47 @@ int main(int argc, char* argv[])
     daemon_create();
 
     openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
-    syslog(LOG_INFO, "After create daemon !");
     display_init();
 
 
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
     ret = open_cooling_controller(fd_cooling);
     if(ret < 0){
-        printf("Error during opening controller fd\n");
+        syslog(LOG_ERR, "[MPDaemon] Impossible to open driver controller");
         return 1;
     }
     int fd_mode = fd_cooling[0];
     int fd_blinking = fd_cooling[1];
 
     int fd_buttons[NB_BUTTONS]; 
-    open_buttons(fd_buttons, NB_BUTTONS);
+    ret = open_buttons(fd_buttons, NB_BUTTONS);
+    if(ret < 0){
+        syslog(LOG_ERR, "[MPDaemon] Impossible to open buttons");
+        return 1;
+    }
 
     int fd_disp_timer = open_timer();
+    if(fd_disp_timer < 0){
+        syslog(LOG_ERR, "[MPDaemon] Impossible to open timer");
+        return 1;
+    }
+
 
     int fd_led = open_led();
+    if(fd_led < 0){
+        syslog(LOG_ERR, "[MPDaemon] Impossible to open timer");
+        return 1;
+    }
 
     int fd_pipe = open_pipe();
+    if(fd_pipe < 0){
+        syslog(LOG_ERR, "[MPDaemon] Impossible to open pipe");
+        return 1;
+    }
 
     int epfd = epoll_create1(0);
     if (epfd == -1){
-        perror("Impossible to create poll group: ");
+        syslog(LOG_ERR, "[MPDaemon] Impossible to create poll group");
         return 1;
     }
     
@@ -366,7 +375,7 @@ int main(int argc, char* argv[])
         events_buttons_conf[i].data.fd = fd_buttons[i]; //Identify available source
         ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
         if (ret == -1){
-            perror("Impossible to add fd button to poll group: ");
+            syslog(LOG_ERR, "Impossible to add fd buttons to poll group");
             return 1;
         }
     }
@@ -375,8 +384,7 @@ int main(int argc, char* argv[])
     event_disp_timer_conf.data.fd = fd_disp_timer;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_disp_timer, &event_disp_timer_conf);
     if (ret == -1){
-        perror("Impossible to add fd timer to poll group: ");
-        syslog(LOG_INFO, "Impossible to add fd timer to poll group");
+        syslog(LOG_ERR, "Impossible to add fd timer to poll group");
         return 1;
     }
 
@@ -385,8 +393,7 @@ int main(int argc, char* argv[])
     event_pipe_conf.data.fd = fd_pipe;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_pipe, &event_pipe_conf);
     if (ret == -1){
-        syslog(LOG_INFO, "Error poll add ! %d, fd: %d", ret, fd_pipe);
-        syslog(LOG_INFO, strerror(errno));
+        syslog(LOG_ERR, "Impossible to add fd pipe to poll group");
         return 1;
     }
 
@@ -394,10 +401,8 @@ int main(int argc, char* argv[])
     while(1){
         struct epoll_event event_occured;
         int nr = epoll_wait(epfd, &event_occured, 1, -1);
-        if (nr == -1){
-            perror("Event error: ");
-            return 1;
-        }
+        if (nr == -1)
+            continue;
 
         if(event_occured.data.fd == fd_disp_timer){
             uint64_t value;

@@ -5,8 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-#define FIFO_PATH "/tmp/MPFifo"
+#include "../daemon/MPDaemon.h"
 
 int main() {
     int fd;
