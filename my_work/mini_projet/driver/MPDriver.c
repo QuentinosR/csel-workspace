@@ -41,9 +41,14 @@ int timer_set_freq(struct timer_list* t, int freq){
 void auto_cooling_callback(struct timer_list *t){
     int temp;
     int retval;
+    mutex_lock(&mutAttr);
+    if(coolingMode == AUTOMATIC)
+        timer_set_freq(t, FREQ_AUTO_COOL); //Necessary to set timer at each time end
+    else
+        mod_timer(&timer_auto_cooling, LONG_MAX);
 
-    timer_set_freq(t, FREQ_AUTO_COOL); //Necessary to set timer at each time end
-
+    mutex_unlock(&mutAttr);
+    
     retval = thermal_zone_get_temp(thermZone, &temp);
     temp /= 1000; //mC => °C
 
@@ -97,9 +102,6 @@ int attr_write_mode(char mode){
     printk(KERN_INFO"[MPDriver] New mode : %d\n", mode);
     if(coolingMode == MANUAL && mode == AUTOMATIC){ // MANUAL => AUTOMATIC
         status = timer_set_freq(&timer_auto_cooling, FREQ_AUTO_COOL);
-    }else if(coolingMode == AUTOMATIC && mode == MANUAL){ // AUTOMATIC => MANUAL
-        //Next period is in max possible time
-        status = mod_timer(&timer_auto_cooling, LONG_MAX);
     }
 
     coolingMode =  mode; 

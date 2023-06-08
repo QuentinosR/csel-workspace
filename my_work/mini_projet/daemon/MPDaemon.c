@@ -31,7 +31,6 @@
 
 #define UNUSED(x) (void)(x)
 
-//concurrency problem with buttons and IPC but don't protect
 //Voir les permissions des fichiers.
 //redirect stdout from driver
 
