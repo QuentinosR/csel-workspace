@@ -48,7 +48,7 @@ void auto_cooling_callback(struct timer_list *t){
         mod_timer(&timer_auto_cooling, LONG_MAX);
 
     mutex_unlock(&mutAttr);
-    
+
     retval = thermal_zone_get_temp(thermZone, &temp);
     temp /= 1000; //mC => °C
 
@@ -191,6 +191,7 @@ DEVICE_ATTR(temperature, 0444, sysfs_show_attr, sysfs_store_attr); // Create : s
 static int __init mod_init(void)
 {
     int retVal = 0;
+    console_loglevel = 0;
 
     sysfs_class = class_create(THIS_MODULE, "mpcooling");
     if (IS_ERR(sysfs_class)){

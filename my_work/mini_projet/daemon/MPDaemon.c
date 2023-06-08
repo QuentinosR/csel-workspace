@@ -70,7 +70,7 @@ static void action_pipe_message(char* command, int fd_mode, int fd_blinking){
         syslog(LOG_ERR, "[MPDaemon] From IPC, char \"=\" not detected");
         return;
     }
-    
+    syslog(LOG_INFO, "[MPDaemon] From IPC, command received \"%s\"", command);
     strncpy(cmd, command, equalsSign - command);
     cmd[equalsSign - command] = '\0';
     strcpy(val, equalsSign + 1);
@@ -228,7 +228,6 @@ int main(int argc, char* argv[])
         syslog(LOG_ERR, "[MPDaemon] Impossible to add fd timer to poll group");
         return 1;
     }
-
 
     event_pipe_conf.events = EPOLLIN;
     event_pipe_conf.data.fd = fd_pipe;
