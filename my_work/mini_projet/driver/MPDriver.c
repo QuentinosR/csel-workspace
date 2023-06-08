@@ -3,10 +3,11 @@
 #include <linux/kernel.h>  // needed for debugging
 #include <linux/device.h>          /* needed for sysfs handling */
 #include <linux/platform_device.h> /* needed for sysfs handling */
-
+#include <linux/sysfs.h>
 #include <linux/thermal.h>
 #include <linux/gpio.h>
 #include <linux/timer.h>
+#include <linux/mutex.h>
 
 #include "MPDriver.h"
 
@@ -28,6 +29,7 @@ static struct device* sysfs_device;
 static char coolingMode = AUTOMATIC;
 static char blinkingFreq = FREQ_DEFAULT_LED;
 static char tempC = 0;
+DEFINE_MUTEX(mutAttr);
 static struct thermal_zone_device *thermZone;
 static struct timer_list timer_auto_cooling;
 static struct timer_list timer_led;
@@ -53,6 +55,7 @@ void auto_cooling_callback(struct timer_list *t){
     }
     tempC = temp;
 
+    mutex_lock(&mutAttr);
     if(temp < 35){
         blinkingFreq = 2;
     }else if(temp < 40){
@@ -62,6 +65,7 @@ void auto_cooling_callback(struct timer_list *t){
     }else{
         blinkingFreq = 20;
     }
+    mutex_unlock(&mutAttr);
 }
 
 void led_timer_callback(struct timer_list *t){
@@ -121,15 +125,22 @@ ssize_t sysfs_show_attr(struct device* dev, struct device_attribute* attr, char*
     //Impossible to know if destination buffer is wide enough.
     char valWrite;
     int nbWritten;
+    
     switch(get_attr(attr)){
         case MODE :
+            mutex_lock(&mutAttr);
             valWrite = coolingMode;
+            mutex_unlock(&mutAttr);
             break;
         case BLINKING :
+            mutex_lock(&mutAttr);
             valWrite = blinkingFreq;
+            mutex_unlock(&mutAttr);
             break;
         case TEMPERATURE :
+            mutex_lock(&mutAttr);
             valWrite = tempC;
+            mutex_unlock(&mutAttr);
             break;
         default:
            return -1;
@@ -143,18 +154,25 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
     char safeBuf[ATTR_MAX_VAL_CHARS + 1] = {0};
     int nbCharsBuf;
     char intSafeBuf;
+    int ret;
 
     nbCharsBuf = count <= ATTR_MAX_VAL_CHARS ? count : ATTR_MAX_VAL_CHARS;
     //printk("strlen: %ld, count :%ld\n", retval, count);
     memcpy(safeBuf, buf, nbCharsBuf);
     
     intSafeBuf = simple_strtol(safeBuf, NULL, 10); //Convert on safe buffer
+    
     switch(get_attr(attr)){
         case MODE :
+            mutex_lock(&mutAttr);
             attr_write_mode(intSafeBuf);
+            mutex_unlock(&mutAttr);
             break;
         case BLINKING :
-            if(attr_write_blinking(intSafeBuf) < 0)
+            mutex_lock(&mutAttr);
+            ret = attr_write_blinking(intSafeBuf);
+            mutex_unlock(&mutAttr);
+            if( ret < 0)
                 return -1;
             break;
         default:
@@ -163,10 +181,10 @@ ssize_t sysfs_store_attr(struct device* dev, struct device_attribute* attr, cons
     return count; //We handled all text
 }
 
-struct device_attribute dev_attr_mode = __ATTR(ATTR_NAME_MODE, 0664, sysfs_show_attr, sysfs_store_attr);
-struct device_attribute dev_attr_blinking = __ATTR(ATTR_NAME_BLINKING, 0664, sysfs_show_attr, sysfs_store_attr);
-struct device_attribute dev_attr_temperature = __ATTR(ATTR_NAME_TEMPERATURE, 0664, sysfs_show_attr, sysfs_store_attr);
 
+DEVICE_ATTR(mode, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
+DEVICE_ATTR(blinking, 0664, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
+DEVICE_ATTR(temperature, 0444, sysfs_show_attr, sysfs_store_attr); // Create : struct device_attribute dev_attr_val
 
 static int __init mod_init(void)
 {

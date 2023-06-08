@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "../daemon/MPDaemon.h"
+#include "../daemon/peripheral.h"
 
 int main() {
     int fd;
@@ -18,7 +18,10 @@ int main() {
         exit(1);
     }
 
-    printf("\"stop\" command to exit\n");
+    printf("Commands: \n");
+    printf("- blinking=X\n");
+    printf("- mode=X\n");
+    printf("- stop\n");
 
     while(1){
         printf("[MPIPC]# ");
@@ -27,13 +30,10 @@ int main() {
         if(strcmp(command, "stop") == 0)
             break;
         write(fd, command, strlen(command));
-        printf("Writer: Message sent: %s\n", command);
     }
 
     // Close the named pipe
     close(fd);
-    // Remove the named pipe
-    unlink(FIFO_PATH);
 
     return 0;
 }

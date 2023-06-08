@@ -24,150 +24,16 @@
  */
 
 //Logs appear in /var/log/messages. Ex: Jan  1 00:13:23 csel local3.info csel_syslog[268]: [FREQ] 4.00
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
+
 #include <sys/epoll.h>
-#include <stdio.h>
-#include <sys/timerfd.h>
-#include <syslog.h>
 #include "ssd1306.h"
-#include <limits.h>
-#include "daemon.h"
-#include "../driver/MPDriver.h"
-#include "MPDaemon.h"
-
-#define GPIO_EXPORT   "/sys/class/gpio/export"
-#define GPIO_UNEXPORT "/sys/class/gpio/unexport"
-#define GPIO_LED      "/sys/class/gpio/gpio362"
-#define GPIO_K1      "/sys/class/gpio/gpio0"
-#define GPIO_K2      "/sys/class/gpio/gpio2"
-#define GPIO_K3      "/sys/class/gpio/gpio3"
-#define COOLING_CONTROLLER "/sys/class/mpcooling/controller"
-#define COOLING_CONTROLLER_MODE COOLING_CONTROLLER ATTR_NAME_MODE
-#define COOLING_CONTROLLER_BLINKING COOLING_CONTROLLER ATTR_NAME_BLINKING
-#define COOLING_CONTROLLER_TEMPERATURE COOLING_CONTROLLER ATTR_NAME_TEMPERATURE
-
-#define K1            "0"
-#define K2            "2"
-#define K3            "3"
-#define LED           "362"
-#define NB_BUTTONS 3
-#define NB_COOLING_CONTROLLER_ATTR 3
-#define TIMER_1S_IN_NS 1000000000
-#define DISPLAY_TIMER_START_INTERVAL_NS (TIMER_1S_IN_NS / 4)
+#include "peripheral.h"
 
 #define UNUSED(x) (void)(x)
 
-//Get initial values or define in MPDriver.h
-static char coolingMode = 1;
-static char blinkingFreq = 5;
 //concurrency problem with buttons and IPC but don't protect
 //Voir les permissions des fichiers.
-
-//Return error code
-static int open_buttons(int* fd, int size){
-    char str_conc[255]; // Used to build path to files
-
-    for(int i = 0; i <= size -1; i++){
-        char* gpio_path;
-        char* gpio_num;
-
-        switch(i){
-            case 0:
-                gpio_path = GPIO_K1;
-                gpio_num = K1;
-                break;
-            case 1:
-                gpio_path = GPIO_K2;
-                gpio_num = K2;
-                break;
-            case 2:
-                gpio_path = GPIO_K3;
-                gpio_num = K3;
-                break;
-            default:
-                break;
-        }
-        // unexport pin out of sysfs (reinitialization)
-        int f = open(GPIO_UNEXPORT, O_WRONLY);
-        write(f, gpio_num, strlen(gpio_num));
-        close(f);
-
-        // export pin to sysfs
-        f = open(GPIO_EXPORT, O_WRONLY);
-        write(f, gpio_num, strlen(gpio_num));
-        close(f);
-
-        // config pin
-        sprintf(str_conc, "%s%s", gpio_path, "/direction");
-        f = open(str_conc, O_WRONLY);
-        write(f, "in", 2);
-        close(f);
-
-        // config interrupt
-        sprintf(str_conc, "%s%s", gpio_path, "/edge");
-        f = open(str_conc, O_WRONLY);
-        write(f, "rising", 6);
-        close(f);
-
-        // open gpio value attribute
-        sprintf(str_conc, "%s%s", gpio_path, "/value");
-        f = open(str_conc, O_RDWR);
-
-        fd[i] = f;
-    }
-    
-    return 1; // to be modifed to return error 
-}
-static int open_led()
-{
-    // unexport pin out of sysfs (reinitialization)
-    int f = open(GPIO_UNEXPORT, O_WRONLY);
-    write(f, LED, strlen(LED));
-    close(f);
-
-    // export pin to sysfs
-    f = open(GPIO_EXPORT, O_WRONLY);
-    write(f, LED, strlen(LED));
-    close(f);
-
-    // config pin
-    f = open(GPIO_LED "/direction", O_WRONLY);
-    write(f, "out", 3);
-    close(f);
-
-    // open gpio value attribute
-    f = open(GPIO_LED "/value", O_RDWR);
-    write(f, "0", 1); //Turn off led
-    
-    return f;
-}
-
-static int open_timer(){
-    struct itimerspec timer_conf;
-	int fd_timer = timerfd_create(CLOCK_MONOTONIC, 0);
-	if (fd_timer == -1)
-        return -1;
-
-    int nbSeconds = DISPLAY_TIMER_START_INTERVAL_NS / TIMER_1S_IN_NS;
-    int nbNanoSeconds = DISPLAY_TIMER_START_INTERVAL_NS % TIMER_1S_IN_NS;
-	timer_conf.it_interval.tv_sec = nbSeconds;
-	timer_conf.it_interval.tv_nsec = nbNanoSeconds;
-	timer_conf.it_value.tv_sec = nbSeconds; //By default 2s
-    timer_conf.it_value.tv_nsec = nbNanoSeconds;
-    
-	if (timerfd_settime(fd_timer, 0, &timer_conf, NULL) < 0) {
-		syslog(LOG_ERR, "[MPDaemon] Impossible to set interval of timer");
-	}
-
-    return fd_timer;
-}
+//redirect stdout from driver
 
 static void action_disp_timer_time_up(int* fd){
 
@@ -178,9 +44,9 @@ static void action_disp_timer_time_up(int* fd){
     char buff_blinking[ATTR_MAX_VAL_CHARS + 1] = {0};
     char buff_temperature[ATTR_MAX_VAL_CHARS + 1] = {0};
 
-    pread(fd_temperature, buff_temperature, 2, 0);
-    pread(fd_blinking, buff_blinking, 2, 0);
-    pread(fd_mode, buff_mode, 2, 0);
+    pread(fd_temperature, buff_temperature, ATTR_MAX_VAL_CHARS, 0);
+    pread(fd_blinking, buff_blinking, ATTR_MAX_VAL_CHARS, 0);
+    pread(fd_mode, buff_mode, ATTR_MAX_VAL_CHARS, 0);
 
     ssd1306_set_position(6,3);
     ssd1306_puts(buff_mode);
@@ -197,68 +63,49 @@ static void action_disp_timer_time_up(int* fd){
     
 }
 
-static int open_pipe(){
-    int fd;
-    
-    // Create the named pipe
-    mkfifo(FIFO_PATH, 0666);
-    fd = open(FIFO_PATH, O_RDONLY | O_NONBLOCK);
-    if (fd == -1)
-        return -1;
-    return fd;
-}
-
-static void action_pipe_message(char* command){
+static void action_pipe_message(char* command, int fd_mode, int fd_blinking){
     char cmd[100];
     char val[100];
     char* equalsSign = strchr(command, '=');
     if (equalsSign == NULL){
-        syslog(LOG_ERR, "Char \"=\" not detected");
+        syslog(LOG_ERR, "[MPDaemon] From IPC, char \"=\" not detected");
         return;
     }
     
     strncpy(cmd, command, equalsSign - command);
     cmd[equalsSign - command] = '\0';
     strcpy(val, equalsSign + 1);
-    syslog(LOG_INFO, "Reader: Message received: cmd :%s, val:%s\n", cmd, val);
-/*
-    char valNum = strol(val, NULL, 10);
-    if(strncmp(cmd, "mode", 4 ) == 0){
-        //coolingMode  =
-    }else if(strncmp(cmd, "blinking", 8) == 0){
-   
-    }else if(strncmp(cmd, "temperature", 4) == 0){
-        
+
+    char valNum = strtol(val, NULL, 10);
+    if(strncmp(cmd, ATTR_NAME_MODE, strlen(ATTR_NAME_MODE) ) == 0){
+        peripheral_apply(fd_mode, valNum);
+    }else if(strncmp(cmd, ATTR_NAME_BLINKING, strlen(ATTR_NAME_BLINKING)) == 0){
+        peripheral_apply(fd_blinking, valNum);
+    }else{
+        return;
     }
-*/
 }
+
 static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
-    char str[2 + 1];
     int fd = 0;
-    char nb = 0;
-    char* pChange = NULL;
+    char buff[ATTR_MAX_VAL_CHARS + 1] = {0};
+    char newVal = 0;
 
     switch(ibut){
         case 0:
-            printf("[MPDaemon] S1 pushed\n");
+            syslog(LOG_INFO, "[MPDaemon] S1 button pushed");
             fd = fd_blinking;
-            nb = blinkingFreq + 1;
-            pChange = &blinkingFreq;
             break;
         case 1:
-            printf("S2\n");
+            syslog(LOG_INFO, "[MPDaemon] S2 button pushed");
             fd = fd_blinking;
-            nb = blinkingFreq - 1;
-            pChange = &blinkingFreq;
             break;
         case 2:
-            printf("S3\n");
+            syslog(LOG_INFO, "[MPDaemon] S3 button pushed");
             fd = fd_mode;
-            nb = !coolingMode;
-            pChange = &coolingMode;
             break;
         default:
-            break;
+            return;
     }
 
     /* Red led blinking */
@@ -266,35 +113,26 @@ static void action_buttons(int ibut, int fd_led, int fd_mode, int fd_blinking){
     usleep(2000);
     pwrite(fd_led, "0", sizeof("1"), 0);
 
-    sprintf(str, "%d", nb);
+    /* Read value from peripheral*/
+    pread(fd, buff, ATTR_MAX_VAL_CHARS, 0);
+    newVal = strtol(buff, NULL, 10);
 
-    /* If no error, modify the value */
-    if(pwrite(fd, str, strlen(str), 0) > 0){
-        *pChange = nb;
+    switch(ibut){
+        case 0:
+            newVal += BLINKING_INC;
+            break;
+        case 1:
+            newVal -= BLINKING_INC;
+            break;
+        case 2:
+            newVal = !newVal;
+            break;
+        default:
+            return;
     }
+    peripheral_apply(fd, newVal);
 }
 
-//[fd_mode, fd_blinking, fd_temperature]
-static int open_cooling_controller(int* fd){
-    if(!fd)
-        return -1;
-    int fd_mode = open(COOLING_CONTROLLER_MODE, O_RDWR);
-    if(fd_mode < 0)
-        return -1;
-
-    int fd_blinking = open(COOLING_CONTROLLER_BLINKING, O_RDWR);
-    if(fd_blinking < 0)
-        return -1;
-
-    int fd_temperature = open(COOLING_CONTROLLER_TEMPERATURE, O_RDONLY);
-    if(fd_temperature < 0)
-        return -1;
-    
-    fd[0] = fd_mode;
-    fd[1] = fd_blinking;
-    fd[2] = fd_temperature;
-    return 0;
-}
 void display_init(){
     ssd1306_init();
     ssd1306_clear_display();
@@ -319,11 +157,13 @@ int main(int argc, char* argv[])
     UNUSED(argc);
     UNUSED(argv);
 
+/* Create daemon */
     daemon_create();
 
     openlog(NULL, LOG_NDELAY | LOG_PID, LOG_DAEMON);
-    display_init();
 
+/* Open peripherals */
+    display_init();
 
     int fd_cooling[NB_COOLING_CONTROLLER_ATTR]; 
     ret = open_cooling_controller(fd_cooling);
@@ -347,7 +187,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-
     int fd_led = open_led();
     if(fd_led < 0){
         syslog(LOG_ERR, "[MPDaemon] Impossible to open timer");
@@ -370,12 +209,15 @@ int main(int argc, char* argv[])
     struct epoll_event event_pipe_conf;
     struct epoll_event event_disp_timer_conf;
 
+
+/* Register epoll events */
+
     for(int i = 0; i < NB_BUTTONS; i++){
         events_buttons_conf[i].events = EPOLLIN | EPOLLET; // WAIT READ + LEVEL
         events_buttons_conf[i].data.fd = fd_buttons[i]; //Identify available source
         ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_buttons[i], &events_buttons_conf[i]);
         if (ret == -1){
-            syslog(LOG_ERR, "Impossible to add fd buttons to poll group");
+            syslog(LOG_ERR, "[MPDaemon] Impossible to add fd buttons to poll group");
             return 1;
         }
     }
@@ -384,7 +226,7 @@ int main(int argc, char* argv[])
     event_disp_timer_conf.data.fd = fd_disp_timer;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_disp_timer, &event_disp_timer_conf);
     if (ret == -1){
-        syslog(LOG_ERR, "Impossible to add fd timer to poll group");
+        syslog(LOG_ERR, "[MPDaemon] Impossible to add fd timer to poll group");
         return 1;
     }
 
@@ -393,10 +235,11 @@ int main(int argc, char* argv[])
     event_pipe_conf.data.fd = fd_pipe;
     ret = epoll_ctl(epfd, EPOLL_CTL_ADD, fd_pipe, &event_pipe_conf);
     if (ret == -1){
-        syslog(LOG_ERR, "Impossible to add fd pipe to poll group");
+        syslog(LOG_ERR, "[MPDaemon] Impossible to add fd pipe to poll group");
         return 1;
     }
 
+/* Wait event and do corresponding action*/
     int avoidFirstEvents = 0;
     while(1){
         struct epoll_event event_occured;
@@ -415,7 +258,7 @@ int main(int argc, char* argv[])
             char buf[256] = {0};
             int ret = read(fd_pipe, buf, 256);
             if(ret != -1 && ret != 0){
-                action_pipe_message(buf);
+                action_pipe_message(buf, fd_mode, fd_blinking);
             }
             continue;
         }
